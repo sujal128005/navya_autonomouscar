@@ -34,8 +34,8 @@ const uint8_t PIN_LED = 13;
 // ---------------- Throttle calibration ----------------
 // Find PWM_START with: python throttle_test.py --sweep (wheels off the ground)
 const uint8_t PWM_IDLE = 0;            // throttle output when stopped
-const uint8_t PWM_START = 55;          // lowest PWM at which the wheels turn
-const uint8_t PWM_MAX = 110;           // PWM sent for speed 1000 (this is the speed cap)
+const uint8_t PWM_START = 75;          // lowest PWM at which the wheels turn (bench: ~75-78)
+const uint8_t PWM_MAX = 130;           // PWM sent for speed 1000 (this is the speed cap)
 const uint8_t PWM_RAW_LIMIT = 160;     // ceiling for R, calibration commands
 const bool INVERT_LEFT = false;        // true = drive this wheel's F/R wire low
 const bool INVERT_RIGHT = false;
@@ -43,10 +43,11 @@ const uint16_t RAMP_UP_PER_10MS = 5;   // speed units gained per 10 ms (0 -> 100
 
 // ---------------- Radio ----------------
 const bool REQUIRE_RC = true;          // false = bench testing without the transmitter
+// Our FS-CT6B: CH2 centre ~1464, full up ~1756 with SWA down (SWA up = dual rate, ~1644).
 const uint16_t RC_AUTO_ABOVE_US = 1700;
-const uint16_t RC_STOP_BELOW_US = 1350;
-const uint16_t RC_FORWARD_FROM_US = 1550;
-const uint16_t RC_FORWARD_FULL_US = 1950;
+const uint16_t RC_STOP_BELOW_US = 1400;
+const uint16_t RC_FORWARD_FROM_US = 1520;
+const uint16_t RC_FORWARD_FULL_US = 1740;
 const uint16_t RC_TIMEOUT_MS = 100;
 
 // ---------------- Laptop link ----------------

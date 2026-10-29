@@ -170,7 +170,8 @@ All tunable numbers live in `autopilot/config.py`.
 ## Demo-day checklist
 
 1. LiPos charged (above 24 V) and the kill switch in reach.
-2. Transmitter on, CH5 in **MANUAL**, right stick centred.
+2. Transmitter on, **SWA down** (SWA up is dual rate and shortens the stick travel),
+   CH5 in **MANUAL**, right stick centred.
 3. Laptop: `python navya_autopilot.py --show`, and wait for `Running`.
 4. A person holds the transmitter for the whole run, ready to pull the stick back.
 5. Flip CH5 to **AUTO**. The car drives off.
