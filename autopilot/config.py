@@ -35,7 +35,7 @@ MIN_OBSTACLE_POINTS = 60        # fewer points than this = sensor noise, not an 
 BLIND_CHECK_FRACTION = 0.6
 
 # --- Speed plan ---
-CRUISE_SPEED = 200
+CRUISE_SPEED = 130
 CREEP_SPEED = 80            # slowest moving speed while closing in on an obstacle
 SLOW_DOWN_DIST_M = 3.8      # start slowing down when an obstacle is this close
 STOP_DIST_M = 2.0           # stop here; the car coasts ~0.9 m more (first ground run)
