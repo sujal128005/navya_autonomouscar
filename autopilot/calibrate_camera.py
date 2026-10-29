@@ -50,7 +50,8 @@ def main():
         intr = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
         for _ in range(15):  # let auto-exposure settle
             pipeline.wait_for_frames()
-        stack = [np.asanyarray(pipeline.wait_for_frames().get_depth_frame().get_data()) for _ in range(FRAMES)]
+        # np.array copies: holding librealsense frame buffers would starve its small frame pool
+        stack = [np.array(pipeline.wait_for_frames().get_depth_frame().get_data()) for _ in range(FRAMES)]
     finally:
         pipeline.stop()
 
