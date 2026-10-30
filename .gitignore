@@ -6,3 +6,4 @@ autopilot/models/*.pt
 autopilot/models/*.onnx
 autopilot/models/*_openvino_model/
 kernel.errors.txt
+autopilot/recordings/

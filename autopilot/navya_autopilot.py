@@ -25,6 +25,7 @@ from navya_link import NavyaLink
 from obstacle import CorridorDetector, Intrinsics
 from phone_stream import PhoneStream
 from speed_planner import SpeedPlanner, apply_trim
+from trip_recorder import TripRecorder
 
 FRAME_TIMEOUT_MS = 500
 PHONE_COLOR_FPS = 15
@@ -41,16 +42,26 @@ else:
         return None
 
 
-def start_camera(with_color=False):
-    """Depth stream, plus colour (phone view / object detection) if asked and the USB link manages it.
+def start_camera(with_color=False, record_to=None, replay_from=None):
+    """Depth stream, plus colour (phone view / object detection / recording) if asked and the USB
+    link manages it. record_to: also save everything to a .bag file. replay_from: play a .bag
+    instead of the live camera.
     Returns (pipeline, depth intrinsics, depth scale, colour intrinsics or None)."""
-    for color in ([True, False] if with_color else [False]):
+    if replay_from:
+        pipeline = rs.pipeline()
+        cfg = rs.config()
+        cfg.enable_device_from_file(str(replay_from), repeat_playback=False)
+        profile = pipeline.start(cfg)
+        color = any(s.stream_type() == rs.stream.color for s in profile.get_streams())
+    for color in ([] if replay_from else [True, False] if with_color else [False]):
         pipeline = rs.pipeline()
         cfg = rs.config()
         cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT,
                           rs.format.z16, config.DEPTH_FPS)
         if color:
             cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, PHONE_COLOR_FPS)
+        if record_to:
+            cfg.enable_record_to_file(str(record_to))
         try:
             profile = pipeline.start(cfg)
             break
@@ -69,9 +80,10 @@ def start_camera(with_color=False):
         color_intr = Intrinsics(c.width, c.height, c.fx, c.fy, c.ppx, c.ppy)
     usb = device.get_info(rs.camera_info.usb_type_descriptor) \
         if device.supports(rs.camera_info.usb_type_descriptor) else "?"
-    print(f"Camera: {device.get_info(rs.camera_info.name)}, USB {usb}, "
-          f"{intr.width}x{intr.height}@{config.DEPTH_FPS}" + (" + colour" if color else ""))
-    if usb.startswith("2"):
+    source = f"replay of {replay_from}" if replay_from else f"USB {usb}"
+    print(f"Camera: {device.get_info(rs.camera_info.name)}, {source}, "
+          f"{intr.width}x{intr.height}" + (" + colour" if color else ""))
+    if usb.startswith("2") and not replay_from:
         print("WARNING: camera is on USB 2. Use a blue USB 3 port/cable, or lower "
               "DEPTH_WIDTH/HEIGHT to 424x240 in config.py.")
     return pipeline, intr, depth_scale, color_intr
@@ -101,7 +113,15 @@ def main():
     parser.add_argument("--phone-port", type=int, default=8080)
     parser.add_argument("--vision", action="store_true",
                         help="object detection: stop further from people, stop at stop signs")
+    parser.add_argument("--record", action="store_true",
+                        help="save camera + depth videos and telemetry (SD card if inserted)")
+    parser.add_argument("--record-raw", action="store_true",
+                        help="with --record: also save the full camera data (.bag, ~100 GB/hour) for --replay")
+    parser.add_argument("--replay", metavar="BAG",
+                        help="run on a recorded raw.bag instead of the camera (never drives the car)")
     args = parser.parse_args()
+    if args.replay:
+        args.dry_run = True
 
     link = None
     if not args.dry_run:
@@ -125,7 +145,11 @@ def main():
         print("Loading the YOLO model...")
         object_detector = ObjectDetector()
 
-    pipeline, intr, depth_scale, color_intr = start_camera(with_color=args.phone or args.vision)
+    recorder = TripRecorder() if args.record else None
+    pipeline, intr, depth_scale, color_intr = start_camera(
+        with_color=args.phone or args.vision or args.record,
+        record_to=recorder.raw_path if recorder and args.record_raw else None,
+        replay_from=args.replay)
     if args.vision and color_intr:
         vision = VisionWorker(object_detector, color_intr, depth_scale)
         rules = VisionRules()
@@ -145,9 +169,12 @@ def main():
     try:
         while True:
             try:
-                frames = pipeline.wait_for_frames(FRAME_TIMEOUT_MS)
+                frames = pipeline.wait_for_frames(3000 if args.replay else FRAME_TIMEOUT_MS)
             except RuntimeError:
                 frames = None
+                if args.replay:
+                    print("End of the recording.")
+                    break
             now = time.monotonic()
 
             color_frame = frames.get_color_frame() if frames and color_intr else None
@@ -213,23 +240,41 @@ def main():
             if rule and rule.reason:
                 lines.append(rule.reason)
             key = read_key()
-            if args.show or phone:
+            recording = recorder is not None and recorder.active
+            if args.show or phone or recording:
                 vis = depth_view(depth_raw, m, detector.stride, lines)
+                cam = None
+                if phone_color is not None:
+                    cam = draw(phone_color.copy(), detections) if vision else phone_color.copy()
+                    put_lines(cam, lines)
                 if args.show:
                     cv2.imshow("Navya", vis)
                     k = cv2.waitKey(1) & 0xFF
                     key = (chr(k).lower() if k != 255 else None) or key
+                if recording:
+                    recorder.frame("depth", vis)
+                    if cam is not None:
+                        recorder.frame("camera", cam)
+                    s = link.status if link else None
+                    recorder.log(mode=mode, state=state,
+                                 obstacle_m="" if m.distance_m is None else f"{m.distance_m:.2f}",
+                                 speed_left=left, speed_right=right, brake=int(brake),
+                                 pwm_left=s.pwm_left if s else "", pwm_right=s.pwm_right if s else "",
+                                 ch2_us=s.ch2_us if s else "", ch5_us=s.ch5_us if s else "",
+                                 vision=rule.reason if rule else "",
+                                 objects=summary(detections) if vision else "", fps=f"{fps:.0f}")
                 if phone:
                     phone.publish("depth", vis)
-                    if phone_color is not None:
-                        cam = draw(phone_color.copy(), detections) if vision else phone_color.copy()
-                        phone.publish("camera", put_lines(cam, lines))
+                    if cam is not None:
+                        phone.publish("camera", cam)
                     status = dict(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
                                   brake="ON" if brake else "off",
                                   pwm=f"{link.status.pwm_left}/{link.status.pwm_right}" if link else "-",
                                   fps=f"{fps:.0f}")
                     if vision:
                         status.update(objects=summary(detections), vision_fps=f"{vision.fps:.0f}")
+                    if recording:
+                        status.update(recording="ON")
                     phone.set_status(**status)
                     for cmd in phone.pop_commands():
                         if cmd == "pause" and not paused:
@@ -249,6 +294,8 @@ def main():
         if vision:
             vision.close()
         pipeline.stop()
+        if recorder:
+            recorder.close()
         if phone:
             phone.close()
         print("Stopped.")

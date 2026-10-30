@@ -179,6 +179,33 @@ All tunable numbers live in `autopilot/config.py`.
    1.5 s it moves off again.
 7. End the run with CH5 back to MANUAL. On the laptop, SPACE pauses and Q quits.
 
+## Trip recorder
+
+Add `--record` to save every run:
+
+```bash
+python navya_autopilot.py --phone --vision --record
+```
+
+Each run gets its own folder, `trip_YYYYMMDD_HHMMSS`, under `navya_trips` on the **SD card**
+(found automatically when inserted), or under `autopilot/recordings` if there is none. It contains:
+
+| File | What |
+|---|---|
+| `camera.mp4` | camera picture with status text and detection boxes, real-time speed |
+| `depth.mp4` | depth view, with the obstacle zone in white |
+| `telemetry.csv` | 10 rows/s: mode, state, obstacle distance, speeds, brake, PWM, RC sticks, vision reason, objects (opens in Excel) |
+| `report.png` | made by `trip_report.py` (below) |
+| `raw.bag` | only with `--record-raw`: the full camera data for `--replay` |
+
+- **Disk space:** the videos use about 15 GB per hour, and `--record-raw` adds about 100 GB per hour.
+  Recording stops by itself when less than 2 GB is free; the car keeps driving.
+- **Trip report:** `python trip_report.py` charts the newest trip (obstacle distance, speed, state)
+  and prints stop counts and time in each state. `python trip_report.py <folder>` picks a specific one.
+- **Replay:** `python navya_autopilot.py --replay <trip>/raw.bag --show --vision` runs the recorded
+  camera data through the current settings. It never drives the car. Use it to tune `config.py`
+  and see what the car *would* have done.
+
 ## Watch from a phone
 
 The laptop rides in the car, so add `--phone` and open the views in any phone browser:
@@ -221,7 +248,10 @@ python vision_view.py --webcam     # laptop webcam: objects only (no depth)
 python vision_view.py --phone      # also on the phone page
 ```
 
-- **Speed:** about 12 detections per second on this laptop's CPU.
+- **Speed:** run `python export_models.py` once after downloading the model (needs
+  `pip install openvino`). The detector then uses OpenVINO on the Intel GPU automatically:
+  19 ms per frame (about 50 fps) on this laptop. Without OpenVINO it falls back to ONNX on the CPU
+  (38 ms), then to PyTorch (about 75 ms).
 - **Tuning:** `DETECT_CLASSES`, `DETECT_CONFIDENCE` and `DETECT_IMAGE_SIZE` in `config.py`
   control what it looks for, how sure it must be, and speed vs. small-object range.
 - **Distance:** the nearer part of the middle of each box, so background showing around a person

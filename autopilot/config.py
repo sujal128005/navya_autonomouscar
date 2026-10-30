@@ -69,6 +69,12 @@ STOP_SIGN_WAIT_S = 3.0          # ...wait this long...
 STOP_SIGN_IGNORE_S = 5.0        # ...then drive on, ignoring stop signs for this long to pass it
 VISION_MAX_AGE_S = 0.5          # detections older than this are ignored
 
+# --- Trip recorder (python navya_autopilot.py --record) ---
+RECORD_DIR = "auto"         # auto = SD card if inserted, else autopilot/recordings; or a folder path
+RECORD_FPS = 15             # video frames per second
+RECORD_LOG_HZ = 10          # telemetry rows per second
+RECORD_MIN_FREE_GB = 2.0    # stop recording (not driving) when the disk gets this full
+
 # --- Corridor viewer and lane finder (python corridor_view.py) ---
 # "walls":  lane = free corridor between the walls, from depth (works on shiny floors)
 # "strips": lane = floor between two black tape/tile strips, from the colour camera
