@@ -40,7 +40,9 @@ CREEP_SPEED = 80            # slowest moving speed while closing in on an obstac
 SLOW_DOWN_DIST_M = 3.8      # start slowing down when an obstacle is this close
 STOP_DIST_M = 2.0           # stop here; the car coasts ~0.9 m more (first ground run)
 RESUME_DIST_M = 2.4         # path counts as clear again beyond this distance...
-RESUME_DELAY_S = 1.5        # ...for this long, then the car moves off again
+RESUME_DELAY_S = 0.5        # ...for this long, then the car moves off again
+START_BOOST_SPEED = 250     # extra throttle for moving off from a stop (31 kg needs a push)...
+START_BOOST_S = 0.4         # ...for this long, then back to the planned speed
 DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 
 # --- Straight-line trim: positive = right wheel faster. Car veers right -> raise it.

@@ -19,9 +19,21 @@ class SpeedPlanner:
         self.state = STOPPED
         self._history = deque(maxlen=config.DISTANCE_HISTORY)
         self._clear_since = None
+        self._moving_since = None
 
     def update(self, distance_m: float | None, now_s: float) -> tuple[int, bool]:
         """Returns (speed 0..1000, brake) for the latest distance (None = clear)."""
+        speed, brake = self._plan(distance_m, now_s)
+        if brake:
+            self._moving_since = None
+            return speed, brake
+        if self._moving_since is None:
+            self._moving_since = now_s
+        if now_s - self._moving_since < config.START_BOOST_S:
+            speed = max(speed, config.START_BOOST_SPEED)
+        return speed, brake
+
+    def _plan(self, distance_m: float | None, now_s: float) -> tuple[int, bool]:
         self._history.append(float("inf") if distance_m is None else distance_m)
         d = min(self._history)
 

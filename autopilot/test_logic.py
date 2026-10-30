@@ -82,7 +82,9 @@ def test_planner_cycle():
     # starts stopped; needs RESUME_DELAY_S of clear path before moving
     assert p.update(None, t) == (0, True) and p.state == RESUMING
     t += config.RESUME_DELAY_S + 0.01
-    assert p.update(None, t) == (config.CRUISE_SPEED, False) and p.state == CLEAR
+    assert p.update(None, t) == (config.START_BOOST_SPEED, False) and p.state == CLEAR  # moving off: boost
+    t += config.START_BOOST_S + 0.01
+    assert p.update(None, t) == (config.CRUISE_SPEED, False)
 
     mid = (config.STOP_DIST_M + config.SLOW_DOWN_DIST_M) / 2
     speed, brake = p.update(mid, t)
@@ -95,7 +97,7 @@ def test_planner_cycle():
         p.update(None, t)
     assert p.state == RESUMING
     t += config.RESUME_DELAY_S + 0.01
-    assert p.update(None, t) == (config.CRUISE_SPEED, False)
+    assert p.update(None, t) == (config.START_BOOST_SPEED, False)  # boost again after every stop
 
 
 def test_planner_obstacle_back_during_resume():
