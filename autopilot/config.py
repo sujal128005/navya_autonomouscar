@@ -15,19 +15,19 @@ DEPTH_FPS = 30
 DEPTH_STRIDE = 2            # use every 2nd pixel each way; plenty for this job
 
 # --- Camera mounting (python calibrate_camera.py --write fills the first two) ---
-CAMERA_HEIGHT_M = 0.555      # lens centre above the floor
-CAMERA_PITCH_DEG = 12.2      # positive = tilted down
+CAMERA_HEIGHT_M = 0.559      # lens centre above the floor
+CAMERA_PITCH_DEG = 14.6      # positive = tilted down
 CAMERA_LATERAL_OFFSET_M = 0.0   # positive = camera right of the car's centre line
 CAMERA_SETBACK_M = 0.0      # lens behind the front bumper; subtracted from distances
 
 # --- Driving corridor: only points inside this box count as obstacles ---
 CORRIDOR_HALF_WIDTH_M = 0.45    # car is ~0.62 m wide; half-width plus a 0.14 m margin
-FLOOR_CLEARANCE_M = 0.08        # ignore anything lower (the floor itself, tape, cables)
+FLOOR_CLEARANCE_M = 0.15       # ignore anything lower (the floor itself, tape, cables)
 MAX_OBSTACLE_HEIGHT_M = 1.6     # ignore anything higher (ceiling, overhead lights)
 DETECT_MIN_M = 0.2
 DETECT_MAX_M = 4.5
 OBSTACLE_PERCENTILE = 5         # nearest 5% of corridor points sets the distance
-MIN_OBSTACLE_POINTS = 60        # fewer points than this = sensor noise, not an obstacle
+MIN_OBSTACLE_POINTS = 800      # fewer points than this = sensor noise, not an obstacle
 
 # The D435i cannot see closer than ~0.3 m: those pixels read 0. If most of the
 # centre of the image has no depth, something is right in front of the lens.

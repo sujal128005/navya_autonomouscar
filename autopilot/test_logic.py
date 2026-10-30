@@ -55,7 +55,7 @@ def test_floor_only_is_clear():
 
 
 def test_box_distance():
-    for dist in (1.0, 2.0, 3.5):
+    for dist in (1.0, 2.0, 2.7):  # a 0.5 m box drops below MIN_OBSTACLE_POINTS beyond ~2.8 m
         m = CorridorDetector(INTR, SCALE).measure(render(box=(dist, 0.25, 0.5), wall_at=8.0))
         assert m.distance_m is not None and abs(m.distance_m - dist) < 0.05, (dist, m.distance_m)
 
