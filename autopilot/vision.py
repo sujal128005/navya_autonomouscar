@@ -13,7 +13,30 @@ import numpy as np
 import config
 from obstacle import Intrinsics
 
-MODEL_PATH = Path(__file__).with_name("models") / "yolo11n.pt"
+MODELS = Path(__file__).with_name("models")
+MODEL_PATH = MODELS / "yolo11n.pt"
+
+
+def pick_backend() -> tuple[Path, str | None, str]:
+    """Fastest model this laptop can run: (model path, predict device, description).
+    The ONNX/OpenVINO copies are made by export_models.py; the .pt is the fallback."""
+    choice = config.DETECT_BACKEND
+    openvino_dir = MODELS / "yolo11n_openvino_model"
+    if choice in ("auto", "openvino") and openvino_dir.exists():
+        try:
+            import openvino
+            if "GPU" in openvino.Core().available_devices:
+                return openvino_dir, "intel:gpu", "OpenVINO on the Intel GPU"
+        except ImportError:
+            pass
+    onnx_file = MODELS / "yolo11n.onnx"
+    if choice in ("auto", "onnx") and onnx_file.exists():
+        try:
+            import onnxruntime  # noqa: F401
+            return onnx_file, None, "ONNX Runtime on the CPU"
+        except ImportError:
+            pass
+    return MODEL_PATH, None, "PyTorch on the CPU (slowest; run export_models.py)"
 
 
 @dataclass
@@ -40,19 +63,21 @@ def box_distance(depth_raw: np.ndarray, depth_scale: float, box, intr: Intrinsic
 
 
 class ObjectDetector:
-    def __init__(self, model_path: Path = MODEL_PATH):
+    def __init__(self):
         import torch
         from ultralytics import YOLO   # imported here: slow to load, and only needed for detection
 
         torch.set_num_threads(config.DETECT_THREADS)
-        self.model = YOLO(str(model_path))
+        model_path, self.device, self.backend = pick_backend()
+        print(f"Object detection: {self.backend}")
+        self.model = YOLO(str(model_path), task="detect")
         self.names = self.model.names
         wanted = set(config.DETECT_CLASSES)
         self.classes = [i for i, n in self.names.items() if not wanted or n in wanted]
 
     def detect(self, color_bgr, depth_raw=None, depth_scale=0.001, intr: Intrinsics | None = None) -> list[Detection]:
         result = self.model.predict(color_bgr, conf=config.DETECT_CONFIDENCE, imgsz=config.DETECT_IMAGE_SIZE,
-                                    classes=self.classes, verbose=False)[0]
+                                    classes=self.classes, device=self.device, verbose=False)[0]
         boxes = result.boxes
         detections = []
         for xyxy, conf, cls in zip(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy(), boxes.cls.cpu().numpy()):

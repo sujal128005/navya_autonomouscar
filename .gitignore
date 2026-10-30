@@ -4,3 +4,4 @@ __pycache__/
 autopilot/captures/
 autopilot/models/*.pt
 autopilot/models/*.onnx
+autopilot/models/*_openvino_model/

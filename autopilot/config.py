@@ -51,6 +51,8 @@ TRIM = 0.0
 # --- Object detection (python vision_view.py) ---
 DETECT_CONFIDENCE = 0.4     # ignore detections the model is less sure about than this
 DETECT_IMAGE_SIZE = 480     # model input size; smaller = faster, larger = sees smaller things
+                            # (after changing it, run export_models.py again)
+DETECT_BACKEND = "auto"     # auto = fastest available: "openvino" (Intel GPU), "onnx", "torch"
 DETECT_CLASSES = [          # what to look for ([] = all 80 COCO classes)
     "person", "bicycle", "car", "motorcycle", "bus", "truck", "stop sign", "dog", "cat",
     "chair", "bench", "backpack", "handbag", "suitcase", "bottle", "cup", "potted plant",
