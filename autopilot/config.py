@@ -59,3 +59,7 @@ LANE_DARK_RATIO = 0.5       # ...and darker than this share of the floor's media
 LANE_MIN_WIDTH_M = 0.05     # ignore dark bits narrower than this (grout lines, cables)
 LANE_MAX_FORWARD_M = 4.0    # fit the strips only up to here; tiles further away are blurry
 LANE_MIN_SAMPLES = 8        # rows of a strip needed before it counts as found
+LANE_MIN_WIDTH_M_TOTAL = 0.6    # sanity checks: lane narrower/wider than this is rejected
+LANE_MAX_WIDTH_M = 3.5
+LANE_MAX_STRIP_ANGLE_DEG = 10   # the two strips must be roughly parallel
+LANE_MAX_HEADING_DEG = 35

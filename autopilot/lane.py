@@ -14,6 +14,8 @@ import numpy as np
 import config
 from obstacle import Intrinsics
 
+LANE_CHECK_FORWARD_M = 2.0
+
 
 @dataclass
 class Line:
@@ -126,7 +128,12 @@ class LaneFinder:
 
         left, right = _fit_line(left_pts), _fit_line(right_pts)
         if left and right:
-            width = float(right.a - left.a)
+            # Width is measured ahead of the car, where both strips are actually seen.
+            width = float(right.lateral(LANE_CHECK_FORWARD_M) - left.lateral(LANE_CHECK_FORWARD_M))
+            angle = abs(math.degrees(math.atan(right.b) - math.atan(left.b)))
+            if not (config.LANE_MIN_WIDTH_M_TOTAL <= width <= config.LANE_MAX_WIDTH_M) \
+                    or angle > config.LANE_MAX_STRIP_ANGLE_DEG:
+                return None   # not two parallel strips a lane apart: reflections, shadows, clutter
             self.last_width = width if self.last_width is None else 0.8 * self.last_width + 0.2 * width
             centre = Line((left.a + right.a) / 2, (left.b + right.b) / 2)
         elif (left or right) and self.last_width:
@@ -136,7 +143,10 @@ class LaneFinder:
             centre, width = Line(side.a + half, side.b), self.last_width
         else:
             return None
-        return Lane(left, right, centre, width, centre.a, math.degrees(math.atan(centre.b)))
+        heading = math.degrees(math.atan(centre.b))
+        if abs(heading) > config.LANE_MAX_HEADING_DEG:
+            return None
+        return Lane(left, right, centre, width, centre.a, heading)
 
 
 def _fit_line(points) -> Line | None:
