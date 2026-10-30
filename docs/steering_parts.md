@@ -71,4 +71,4 @@ pins. With a servo, the wiring changes to:
 | Steering servo signal | - | **D9** |
 | Receiver CH1 (manual steering) | - | **D4** |
 
-Prices are rough Indian retail estimates (Robu.in, Robocraze, Amazon.in) and will vary.
+Prices are rough estimates. **For the actual Robu.in order (products, SKUs, live prices and stock) see `docs/navya_bill_robu.xlsx`.**
