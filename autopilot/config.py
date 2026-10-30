@@ -48,6 +48,15 @@ DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 # --- Straight-line trim: positive = right wheel faster. Car veers right -> raise it.
 TRIM = 0.0
 
+# --- Object detection (python vision_view.py) ---
+DETECT_CONFIDENCE = 0.4     # ignore detections the model is less sure about than this
+DETECT_IMAGE_SIZE = 480     # model input size; smaller = faster, larger = sees smaller things
+DETECT_CLASSES = [          # what to look for ([] = all 80 COCO classes)
+    "person", "bicycle", "car", "motorcycle", "bus", "truck", "stop sign", "dog", "cat",
+    "chair", "bench", "backpack", "handbag", "suitcase", "bottle", "cup", "potted plant",
+    "dining table", "couch", "tv", "laptop", "cell phone",
+]
+
 # --- Corridor viewer and lane finder (python corridor_view.py) ---
 # "walls":  lane = free corridor between the walls, from depth (works on shiny floors)
 # "strips": lane = floor between two black tape/tile strips, from the colour camera

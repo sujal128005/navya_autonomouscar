@@ -181,6 +181,17 @@ def test_wall_lane_ignores_person_by_the_wall():
     assert lane and abs(lane.width_m - 2.3) < 0.1, lane
 
 
+def test_object_distance_ignores_background():
+    from vision import box_distance
+    intr = Intrinsics(640, 480, 600, 600, 320, 240)
+    depth = np.full((480, 640), 5000, np.uint16)       # wall at 5 m
+    depth[150:400, 250:390] = 2000                     # person at 2 m...
+    depth[300:400, 300:340] = 5000                     # ...with the wall showing between the legs
+    distance, lateral = box_distance(depth, 0.001, (250, 150, 390, 400), intr)
+    assert abs(distance - 2.0) < 0.01 and abs(lateral) < 0.01, (distance, lateral)
+    assert box_distance(np.zeros((480, 640), np.uint16), 0.001, (250, 150, 390, 400), intr) == (None, None)
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)

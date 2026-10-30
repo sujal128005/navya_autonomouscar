@@ -200,6 +200,34 @@ The autopilot page has **Pause** and **Resume** buttons. Pause holds the car sto
 SPACE on the laptop. Wi-Fi can lag or drop, so **the transmitter stays the emergency stop**.
 The first time, Windows may ask whether Python may use the network: allow it.
 
+## Object detection
+
+**YOLO11n** finds people, chairs, bags, bottles, bicycles, cars, stop signs and more in the
+colour image. With the D435i, each object also gets its distance and side
+(e.g. *person 2.3 m ahead*).
+
+The model file is not in the repo. Download it once into `autopilot/models/`:
+
+```bash
+curl -L -o autopilot/models/yolo11n.pt https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
+```
+
+Then:
+
+```bash
+cd autopilot
+python vision_view.py              # D435i: objects + distance
+python vision_view.py --webcam     # laptop webcam: objects only (no depth)
+python vision_view.py --phone      # also on the phone page
+```
+
+- **Speed:** about 12 detections per second on this laptop's CPU.
+- **Tuning:** `DETECT_CLASSES`, `DETECT_CONFIDENCE` and `DETECT_IMAGE_SIZE` in `config.py`
+  control what it looks for, how sure it must be, and speed vs. small-object range.
+- **Distance:** the nearer part of the middle of each box, so background showing around a person
+  doesn't count.
+- This program only looks; it is not yet connected to the driving.
+
 ## Corridor viewer: lane and 3D map
 
 `LANE_SOURCE` in `config.py` decides where the lane comes from:
