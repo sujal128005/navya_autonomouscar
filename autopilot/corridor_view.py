@@ -17,6 +17,7 @@ Keys: 1 view from behind, 2 top view, 3 side view, R reset view,
 This program never drives the car. Push it, or drive it in MANUAL.
 """
 
+import argparse
 import math
 import sys
 import time
@@ -30,6 +31,7 @@ import pyrealsense2 as rs
 import config
 from lane import LaneFinder, LaneView, WallLaneFinder
 from obstacle import CorridorDetector, Intrinsics
+from phone_stream import PhoneStream
 
 CAR_LENGTH_M = 1.1
 CAR_HALF_WIDTH_M = 0.31
@@ -266,6 +268,17 @@ class Scene:
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--phone", action="store_true", help="also serve the views and lane/obstacle status to a phone")
+    parser.add_argument("--phone-port", type=int, default=8080)
+    args = parser.parse_args()
+
+    phone = None
+    if args.phone:
+        phone = PhoneStream("Navya corridor view", {"camera": "Camera + bird's-eye floor map", "map3d": "3D map"},
+                            {"3D: behind": "1", "3D: top": "2", "3D: side": "3"}, port=args.phone_port)
+        phone.print_addresses()
+
     pipeline, align, intr, scale = start_camera()
     scene = Scene(intr, scale)
     view = OrbitView()
@@ -303,6 +316,17 @@ def main():
             cv2.imshow("Navya 3D", img3d)
 
             key = chr(cv2.waitKey(1) & 0xFF).lower()
+            if phone:
+                phone.publish("camera", cam)
+                phone.publish("map3d", img3d)
+                lane = lv.lane
+                phone.set_status(mode="VIEW ONLY", obstacle=obstacle,
+                                 lane=(f"{abs(lane.offset_m):.2f} m {'right' if lane.offset_m > 0 else 'left'}, "
+                                       f"heading {lane.heading_deg:+.1f} deg, width {lane.width_m:.2f} m")
+                                 if lane else "not found",
+                                 fps=f"{fps:.0f}")
+                for cmd in phone.pop_commands():
+                    view.preset(cmd)
             if key == "q":
                 break
             if key in OrbitView.PRESETS:
@@ -320,6 +344,8 @@ def main():
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
+        if phone:
+            phone.close()
     return 0
 
 

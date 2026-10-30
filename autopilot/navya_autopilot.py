@@ -1,7 +1,8 @@
 """Navya demo autopilot: drive straight, slow and stop for obstacles, resume when clear.
 
 Run on the laptop riding in the car, with the D435i and the Arduino plugged in:
-    python navya_autopilot.py --show          # drive, with a live depth window
+    python navya_autopilot.py --show            # drive, with a live depth window
+    python navya_autopilot.py --phone           # drive, and watch it from a phone
     python navya_autopilot.py --dry-run --show  # camera only, no Arduino needed
 
 Keys (terminal or depth window): SPACE = pause/unpause (pause = stop), Q = quit.
@@ -14,15 +15,18 @@ import os
 import sys
 import time
 
+import cv2
 import numpy as np
 import pyrealsense2 as rs
 
 import config
 from navya_link import NavyaLink
 from obstacle import CorridorDetector, Intrinsics
+from phone_stream import PhoneStream
 from speed_planner import SpeedPlanner, apply_trim
 
 FRAME_TIMEOUT_MS = 500
+PHONE_COLOR_FPS = 15
 
 if os.name == "nt":
     import msvcrt
@@ -36,12 +40,22 @@ else:
         return None
 
 
-def start_camera():
-    pipeline = rs.pipeline()
-    cfg = rs.config()
-    cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT,
-                      rs.format.z16, config.DEPTH_FPS)
-    profile = pipeline.start(cfg)
+def start_camera(with_color=False):
+    """Depth stream (plus colour for the phone view if asked and the USB link manages it)."""
+    for color in ([True, False] if with_color else [False]):
+        pipeline = rs.pipeline()
+        cfg = rs.config()
+        cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT,
+                          rs.format.z16, config.DEPTH_FPS)
+        if color:
+            cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, PHONE_COLOR_FPS)
+        try:
+            profile = pipeline.start(cfg)
+            break
+        except RuntimeError as e:
+            if not color:
+                raise
+            print(f"Colour camera could not start alongside depth ({e}); the phone gets the depth view only.")
     device = profile.get_device()
     depth_scale = device.first_depth_sensor().get_depth_scale()
     i = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
@@ -49,26 +63,26 @@ def start_camera():
     usb = device.get_info(rs.camera_info.usb_type_descriptor) \
         if device.supports(rs.camera_info.usb_type_descriptor) else "?"
     print(f"Camera: {device.get_info(rs.camera_info.name)}, USB {usb}, "
-          f"{intr.width}x{intr.height}@{config.DEPTH_FPS}")
+          f"{intr.width}x{intr.height}@{config.DEPTH_FPS}" + (" + colour" if color else ""))
     if usb.startswith("2"):
         print("WARNING: camera is on USB 2. Use a blue USB 3 port/cable, or lower "
               "DEPTH_WIDTH/HEIGHT to 424x240 in config.py.")
     return pipeline, intr, depth_scale
 
 
-def draw(depth_raw, measurement, stride, lines):
-    import cv2
+def put_lines(img, lines):
+    for n, text in enumerate(lines):
+        cv2.putText(img, text, (10, 28 + 28 * n), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
+        cv2.putText(img, text, (10, 28 + 28 * n), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    return img
 
+
+def depth_view(depth_raw, measurement, stride, lines):
     vis = cv2.applyColorMap(cv2.convertScaleAbs(depth_raw, alpha=0.04), cv2.COLORMAP_JET)
     mask = np.kron(measurement.mask, np.ones((stride, stride), dtype=bool))
     mask = mask[:vis.shape[0], :vis.shape[1]]
     vis[mask] = (0.4 * vis[mask] + 0.6 * np.array([255, 255, 255])).astype(np.uint8)
-    for n, text in enumerate(lines):
-        cv2.putText(vis, text, (10, 28 + 28 * n), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
-        cv2.putText(vis, text, (10, 28 + 28 * n), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-    cv2.imshow("Navya", vis)
-    key = cv2.waitKey(1) & 0xFF
-    return chr(key).lower() if key != 255 else None
+    return put_lines(vis, lines)
 
 
 def main():
@@ -76,6 +90,8 @@ def main():
     parser.add_argument("--port", help="Arduino serial port, e.g. COM5 (default: auto-detect)")
     parser.add_argument("--dry-run", action="store_true", help="camera and planner only; never talks to the Arduino")
     parser.add_argument("--show", action="store_true", help="show the depth view with the corridor highlighted")
+    parser.add_argument("--phone", action="store_true", help="serve the camera, depth view and status to a phone")
+    parser.add_argument("--phone-port", type=int, default=8080)
     args = parser.parse_args()
 
     link = None
@@ -87,12 +103,20 @@ def main():
             link.close()
             return 1
 
-    pipeline, intr, depth_scale = start_camera()
+    phone = None
+    if args.phone:
+        phone = PhoneStream("Navya autopilot", {"camera": "Camera", "depth": "Depth (white = obstacle zone)"},
+                            {"Pause (hold stopped)": "pause", "Resume": "resume"}, port=args.phone_port)
+        phone.print_addresses()
+
+    pipeline, intr, depth_scale = start_camera(with_color=args.phone)
     detector = CorridorDetector(intr, depth_scale)
     planner = SpeedPlanner()
     paused = False
     last_print = 0.0
     last_state = None
+    last_depth_at = time.monotonic()
+    phone_color = None
     frames_seen = 0
     fps_t0 = time.monotonic()
     fps = 0.0
@@ -102,17 +126,25 @@ def main():
         while True:
             try:
                 frames = pipeline.wait_for_frames(FRAME_TIMEOUT_MS)
-                depth_frame = frames.get_depth_frame()
             except RuntimeError:
-                depth_frame = None
+                frames = None
             now = time.monotonic()
 
+            if phone and frames:
+                color_frame = frames.get_color_frame()
+                if color_frame:
+                    phone_color = np.array(color_frame.get_data())
+            depth_frame = frames.get_depth_frame() if frames else None
             if not depth_frame:
-                planner.reset()
-                if link:
-                    link.stop()
-                print("No depth frame from the camera - stopped.")
+                # A colour-only frame set is normal; only a real gap in depth stops the car.
+                if now - last_depth_at > FRAME_TIMEOUT_MS / 1000:
+                    planner.reset()
+                    if link:
+                        link.stop()
+                    print("No depth frame from the camera - stopped.")
+                    last_depth_at = now
                 continue
+            last_depth_at = now
 
             depth_raw = np.asanyarray(depth_frame.get_data())
             m = detector.measure(depth_raw)
@@ -143,10 +175,27 @@ def main():
                 print(f"{summary}{pwm}  ({m.points} pts, {fps:.0f} fps)")
                 last_print, last_state = now, state
 
+            lines = [f"{mode} {state}", f"obstacle {dist}", f"speed {left}/{right}{' BRAKE' if brake else ''}"]
             key = read_key()
-            if args.show:
-                key = draw(depth_raw, m, detector.stride, [f"{mode} {state}", f"obstacle {dist}",
-                                                          f"speed {left}/{right}{' BRAKE' if brake else ''}"]) or key
+            if args.show or phone:
+                vis = depth_view(depth_raw, m, detector.stride, lines)
+                if args.show:
+                    cv2.imshow("Navya", vis)
+                    k = cv2.waitKey(1) & 0xFF
+                    key = (chr(k).lower() if k != 255 else None) or key
+                if phone:
+                    phone.publish("depth", vis)
+                    if phone_color is not None:
+                        phone.publish("camera", put_lines(phone_color.copy(), lines))
+                    phone.set_status(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
+                                     brake="ON" if brake else "off",
+                                     pwm=f"{link.status.pwm_left}/{link.status.pwm_right}" if link else "-",
+                                     fps=f"{fps:.0f}")
+                    for cmd in phone.pop_commands():
+                        if cmd == "pause" and not paused:
+                            key = " "
+                        elif cmd == "resume" and paused:
+                            key = " "
             if key == " ":
                 paused = not paused
                 print("PAUSED - car held stopped" if paused else "Unpaused")
@@ -158,6 +207,8 @@ def main():
         if link:
             link.close()
         pipeline.stop()
+        if phone:
+            phone.close()
         print("Stopped.")
     return 0
 

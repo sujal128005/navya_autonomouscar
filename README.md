@@ -179,6 +179,27 @@ All tunable numbers live in `autopilot/config.py`.
    1.5 s it moves off again.
 7. End the run with CH5 back to MANUAL. On the laptop, SPACE pauses and Q quits.
 
+## Watch from a phone
+
+The laptop rides in the car, so add `--phone` and open the views in any phone browser:
+
+```bash
+python navya_autopilot.py --phone          # camera, depth, mode, state, obstacle distance, speed
+python corridor_view.py --phone            # camera + bird's-eye map, 3D map, lane, obstacle
+```
+
+1. On the laptop, turn on **Mobile hotspot** (Windows Settings → Network → Mobile hotspot), and
+   connect the phone to it. Campus Wi-Fi often blocks phone-to-laptop traffic; the hotspot
+   always works.
+2. The program prints the addresses to open, for example `http://192.168.137.1:8080`. Use the
+   `192.168.137.x` one when on the hotspot.
+3. The phone shows the live pictures and a status bar. The mode turns **green in AUTO**, yellow
+   in MANUAL and red with no radio. "NO UPDATES" means the program stopped.
+
+The autopilot page has **Pause** and **Resume** buttons. Pause holds the car stopped, the same as
+SPACE on the laptop. Wi-Fi can lag or drop, so **the transmitter stays the emergency stop**.
+The first time, Windows may ask whether Python may use the network: allow it.
+
 ## Corridor viewer: lane and 3D map
 
 `LANE_SOURCE` in `config.py` decides where the lane comes from:
