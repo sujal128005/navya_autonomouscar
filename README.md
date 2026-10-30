@@ -181,7 +181,13 @@ All tunable numbers live in `autopilot/config.py`.
 
 ## Corridor viewer: lane and 3D map
 
-The lane is the floor between two black tile strips, one on each side of the car.
+`LANE_SOURCE` in `config.py` decides where the lane comes from:
+
+- **`"walls"` (default):** the lane is the free corridor between the walls, measured by the depth
+  camera. Shiny floors don't affect it. Our polished granite corridor mirrors the walls so strongly
+  that colour-based strip finding is unreliable there.
+- **`"strips"`:** the lane is the floor between two black strips (matte tape or tiles), found in the
+  colour image.
 
 ```bash
 cd autopilot
@@ -206,6 +212,8 @@ Run `calibrate_camera.py --write` first. The floor map relies on the camera heig
 
 | Problem | Change in `config.py` |
 |---|---|
+| Walls: lane edge jumps onto a bin or person by the wall | raise `WALL_MIN_LATERAL_M` |
+| Walls: low skirting or clutter ignored / picked up | adjust `WALL_MIN_HEIGHT_M` |
 | Strips not found (shown grey, not yellow) | raise `LANE_DARK_MAX` (e.g. 90) |
 | Shadows or reflections show up as strips | lower `LANE_DARK_MAX` (e.g. 50) |
 | Grout lines or cables picked up | raise `LANE_MIN_WIDTH_M` |

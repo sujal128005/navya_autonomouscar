@@ -87,6 +87,10 @@ class LaneFinder:
         return cv2.remap(image, self._map_x, self._map_y, interpolation,
                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
+    def view(self, color_bgr: np.ndarray, lane: Lane | None) -> LaneView:
+        """Bird's-eye view for a lane found some other way (no strip detection)."""
+        return LaneView(self.to_birdseye(color_bgr), self._valid, np.zeros_like(self._valid), lane)
+
     def find(self, color_bgr: np.ndarray, not_floor: np.ndarray | None = None) -> LaneView:
         """not_floor: optional bool image (colour resolution) of pixels standing above the floor."""
         bev = self.to_birdseye(color_bgr)
@@ -147,6 +151,88 @@ class LaneFinder:
         if abs(heading) > config.LANE_MAX_HEADING_DEG:
             return None
         return Lane(left, right, centre, width, centre.a, heading)
+
+
+class WallLaneFinder:
+    """Lane = free corridor between the walls, from depth only (immune to floor reflections).
+
+    For each 10 cm step ahead, the innermost thing standing above the floor on each
+    side marks the corridor edge; a straight line is fitted to each side, ignoring
+    outliers such as a person or a bin near one wall.
+    """
+
+    STEP_M = 0.1
+
+    def __init__(self):
+        self._rng = np.random.default_rng(0)
+        self._smoothed = None
+        self.last_width = None
+
+    def find(self, forward, lateral, height, valid) -> Lane | None:
+        solid = (valid & (height > config.WALL_MIN_HEIGHT_M) & (height < config.WALL_MAX_HEIGHT_M)
+                 & (forward > config.WALL_MIN_FORWARD_M) & (forward < config.WALL_MAX_FORWARD_M)
+                 & (np.abs(lateral) > config.WALL_MIN_LATERAL_M))
+        f, lat = forward[solid], lateral[solid]
+        if len(f) == 0:
+            return self._result(None, None)
+
+        bins = ((f - config.WALL_MIN_FORWARD_M) / self.STEP_M).astype(int)
+        left_pts, right_pts = [], []
+        for b in np.unique(bins):
+            in_bin = bins == b
+            centre_f = config.WALL_MIN_FORWARD_M + (b + 0.5) * self.STEP_M
+            for side, pts, pick in ((lat < 0, left_pts, 90), (lat > 0, right_pts, 10)):
+                vals = lat[in_bin & side]
+                if len(vals) >= 5:
+                    pts.append((centre_f, float(np.percentile(vals, pick))))
+        return self._result(self._ransac(left_pts), self._ransac(right_pts))
+
+    def _result(self, left, right) -> Lane | None:
+        if left and right:
+            width = float(right.lateral(LANE_CHECK_FORWARD_M) - left.lateral(LANE_CHECK_FORWARD_M))
+            angle = abs(math.degrees(math.atan(right.b) - math.atan(left.b)))
+            if not (config.LANE_MIN_WIDTH_M_TOTAL <= width <= config.WALL_MAX_LANE_WIDTH_M) \
+                    or angle > config.LANE_MAX_STRIP_ANGLE_DEG:
+                return None
+            self.last_width = width if self.last_width is None else 0.8 * self.last_width + 0.2 * width
+            centre = Line((left.a + right.a) / 2, (left.b + right.b) / 2)
+        elif (left or right) and self.last_width:
+            side = left or right
+            centre, width = Line(side.a + self.last_width / 2 * (1 if left else -1), side.b), self.last_width
+        else:
+            self._smoothed = None
+            return None
+
+        # Light smoothing so the lane does not jitter frame to frame.
+        if self._smoothed:
+            k = 0.4
+            centre = Line(k * centre.a + (1 - k) * self._smoothed.a, k * centre.b + (1 - k) * self._smoothed.b)
+        self._smoothed = centre
+        heading = math.degrees(math.atan(centre.b))
+        if abs(heading) > config.LANE_MAX_HEADING_DEG:
+            return None
+        return Lane(left, right, centre, width, centre.a, heading)
+
+    def _ransac(self, points) -> Line | None:
+        if len(points) < config.LANE_MIN_SAMPLES:
+            return None
+        pts = np.asarray(points)
+        best, best_count = None, 0
+        for _ in range(60):
+            i, j = self._rng.choice(len(pts), 2, replace=False)
+            (f1, l1), (f2, l2) = pts[i], pts[j]
+            if abs(f2 - f1) < 0.3:
+                continue
+            b = (l2 - l1) / (f2 - f1)
+            count = np.count_nonzero(np.abs(pts[:, 1] - (l1 + b * (pts[:, 0] - f1))) < config.WALL_FIT_TOLERANCE_M)
+            if count > best_count:
+                best, best_count = (l1 - b * f1, b), count
+        if best is None or best_count < config.LANE_MIN_SAMPLES:
+            return None
+        a, b = best
+        keep = np.abs(pts[:, 1] - (a + b * pts[:, 0])) < config.WALL_FIT_TOLERANCE_M
+        b, a = np.polyfit(pts[keep, 0], pts[keep, 1], 1)
+        return Line(float(a), float(b))
 
 
 def _fit_line(points) -> Line | None:

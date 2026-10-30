@@ -47,19 +47,34 @@ DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 TRIM = 0.0
 
 # --- Corridor viewer and lane finder (python corridor_view.py) ---
-# The lane is the floor between two black tile strips, one each side of the car.
+# "walls":  lane = free corridor between the walls, from depth (works on shiny floors)
+# "strips": lane = floor between two black tape/tile strips, from the colour camera
+LANE_SOURCE = "walls"
+WALL_MIN_HEIGHT_M = 0.15    # wall points: from this height...
+WALL_MAX_HEIGHT_M = 1.5     # ...up to this one
+WALL_MIN_FORWARD_M = 0.5
+WALL_MAX_FORWARD_M = 5.0
+WALL_MIN_LATERAL_M = 0.35   # ignore things right in front of the car (people, boxes) as walls
+WALL_FIT_TOLERANCE_M = 0.10
+WALL_MAX_LANE_WIDTH_M = 6.0
+
+# Both lane sources: sanity checks and drawing range.
+LANE_MIN_SAMPLES = 8        # 10 cm steps (walls) / 4 cm rows (strips) needed per edge
+LANE_MIN_WIDTH_M_TOTAL = 0.6    # a lane narrower than this is rejected
+LANE_MAX_STRIP_ANGLE_DEG = 10   # the two edges must be roughly parallel
+LANE_MAX_HEADING_DEG = 35
+LANE_MAX_FORWARD_M = 4.0    # edges are fitted and drawn up to here
+
+# Strip lane only (LANE_SOURCE = "strips").
+LANE_DARK_MAX = 70          # a floor cell is black tile if darker than this (0-255)...
+LANE_DARK_RATIO = 0.5       # ...and darker than this share of the floor's median brightness
+LANE_MIN_WIDTH_M = 0.05     # ignore dark bits narrower than this (grout lines, cables)
+LANE_MAX_WIDTH_M = 3.5
+
+# Viewer display.
 VIEW_FPS = 15               # depth + colour together; 15 is safe even on USB 2
 VIEW_POINT_STRIDE = 3       # 3D view draws every 3rd pixel each way
 BEV_RES_M = 0.02            # bird's-eye floor map: 2 cm per cell
 BEV_HALF_WIDTH_M = 2.0      # map covers 2 m either side of the car...
 BEV_MIN_FORWARD_M = 0.5     # ...from 0.5 m...
 BEV_MAX_FORWARD_M = 6.0     # ...to 6 m ahead
-LANE_DARK_MAX = 70          # a floor cell is black tile if darker than this (0-255)...
-LANE_DARK_RATIO = 0.5       # ...and darker than this share of the floor's median brightness
-LANE_MIN_WIDTH_M = 0.05     # ignore dark bits narrower than this (grout lines, cables)
-LANE_MAX_FORWARD_M = 4.0    # fit the strips only up to here; tiles further away are blurry
-LANE_MIN_SAMPLES = 8        # rows of a strip needed before it counts as found
-LANE_MIN_WIDTH_M_TOTAL = 0.6    # sanity checks: lane narrower/wider than this is rejected
-LANE_MAX_WIDTH_M = 3.5
-LANE_MAX_STRIP_ANGLE_DEG = 10   # the two strips must be roughly parallel
-LANE_MAX_HEADING_DEG = 35

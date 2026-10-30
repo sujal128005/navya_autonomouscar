@@ -1,11 +1,14 @@
-"""Navya corridor viewer: live lane between two black tile strips, a bird's-eye
-floor map, and a 3D map of what is in front of the car.
+"""Navya corridor viewer: live lane, a bird's-eye floor map, and a 3D map of
+what is in front of the car.
 
     python corridor_view.py
 
+The lane comes from the corridor walls (depth) or from two black floor strips
+(colour); LANE_SOURCE in config.py picks which.
+
 Windows:
-  "Navya camera"  colour view with the strips and lane centre drawn in,
-                  next to the bird's-eye floor map (strips yellow, obstacles red)
+  "Navya camera"  colour view with the lane edges (yellow) and centre (green),
+                  next to the bird's-eye floor map (walls/obstacles red)
   "Navya 3D"      3D point cloud; drag with the left mouse button to rotate,
                   mouse wheel to zoom
 Keys: 1 view from behind, 2 top view, 3 side view, R reset view,
@@ -25,7 +28,7 @@ import numpy as np
 import pyrealsense2 as rs
 
 import config
-from lane import LaneFinder, LaneView
+from lane import LaneFinder, LaneView, WallLaneFinder
 from obstacle import CorridorDetector, Intrinsics
 
 CAR_LENGTH_M = 1.1
@@ -145,12 +148,13 @@ class OrbitView:
 
 def lane_text(lv: LaneView) -> list[str]:
     lane = lv.lane
+    edge = "wall" if config.LANE_SOURCE == "walls" else "strip"
     if not lane:
-        return ["Lane: not found"]
+        return [f"Lane ({config.LANE_SOURCE}): not found"]
     side = "right" if lane.offset_m > 0 else "left"
-    strips = "both strips" if lane.left and lane.right else ("left strip only" if lane.left else "right strip only")
+    seen = f"both {edge}s" if lane.left and lane.right else (f"left {edge} only" if lane.left else f"right {edge} only")
     return [f"Lane centre {abs(lane.offset_m):.2f} m {side}, heading {lane.heading_deg:+.1f} deg",
-            f"Lane width {lane.width_m:.2f} m ({strips})"]
+            f"Lane width {lane.width_m:.2f} m ({seen})"]
 
 
 def draw_camera(color, lv: LaneView, finder: LaneFinder, text):
@@ -229,15 +233,19 @@ class Scene:
         self.obstacles = CorridorDetector(intr, depth_scale)
         self.cloud = CorridorDetector(intr, depth_scale, stride=config.VIEW_POINT_STRIDE)
         self.lanes = LaneFinder(intr)
+        self.walls = WallLaneFinder()
         self.intr = intr
 
     def process(self, depth, color):
         m = self.obstacles.measure(depth)
         fwd, lat, hgt, valid = self.obstacles.geometry(depth)
         above = valid & (hgt > config.FLOOR_CLEARANCE_M) & (hgt < config.MAX_OBSTACLE_HEIGHT_M)
-        not_floor = cv2.resize((valid & (hgt > 0.05)).astype(np.uint8), (self.intr.width, self.intr.height),
-                               interpolation=cv2.INTER_NEAREST)
-        lv = self.lanes.find(color, not_floor)
+        if config.LANE_SOURCE == "walls":
+            lv = self.lanes.view(color, self.walls.find(fwd, lat, hgt, valid))
+        else:
+            not_floor = cv2.resize((valid & (hgt > 0.05)).astype(np.uint8), (self.intr.width, self.intr.height),
+                                   interpolation=cv2.INTER_NEAREST)
+            lv = self.lanes.find(color, not_floor)
 
         s = config.VIEW_POINT_STRIDE
         f3, l3, h3, v3 = self.cloud.geometry(depth)

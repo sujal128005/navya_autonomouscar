@@ -150,6 +150,35 @@ def test_no_strips_no_lane():
     assert LaneFinder(INTR).find(render_strips([])).lane is None
 
 
+def corridor_points(left=-1.0, right=1.3, heading_deg=0.0, person=None):
+    """Point arrays (forward, lateral, height, valid) for a corridor with two walls (+ optional person)."""
+    rng = np.random.default_rng(1)
+    slope = math.tan(math.radians(heading_deg))
+    f = rng.uniform(0.3, 6.0, 20000)
+    h = rng.uniform(-0.3, 2.0, 20000)   # below 0 = mirror images in a shiny floor
+    lat = np.where(rng.random(20000) < 0.5, left, right) + slope * f + rng.normal(0, 0.02, 20000)
+    if person:
+        pf, pl = person
+        f = np.concatenate([f, rng.uniform(pf, pf + 0.3, 2000)])
+        lat = np.concatenate([lat, rng.uniform(pl - 0.2, pl + 0.2, 2000)])
+        h = np.concatenate([h, rng.uniform(0, 1.7, 2000)])
+    return f, lat, h, np.ones_like(f, dtype=bool)
+
+
+def test_wall_lane():
+    from lane import WallLaneFinder
+    lane = WallLaneFinder().find(*corridor_points())
+    assert lane and abs(lane.offset_m - 0.15) < 0.05 and abs(lane.width_m - 2.3) < 0.1, lane
+    lane = WallLaneFinder().find(*corridor_points(heading_deg=-6))
+    assert lane and abs(lane.heading_deg + 6) < 1.5, lane
+
+
+def test_wall_lane_ignores_person_by_the_wall():
+    from lane import WallLaneFinder
+    lane = WallLaneFinder().find(*corridor_points(person=(2.0, 0.8)))
+    assert lane and abs(lane.width_m - 2.3) < 0.1, lane
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)
