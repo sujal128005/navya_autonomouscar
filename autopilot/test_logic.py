@@ -105,6 +105,51 @@ def test_planner_obstacle_back_during_resume():
     assert p.state == STOPPED
 
 
+def render_strips(centres, half_width=0.1, heading_deg=0.0, floor=170, tile=25) -> np.ndarray:
+    """Colour image of a light floor with black strips at lateral = c + tan(heading) * forward."""
+    p = math.radians(config.CAMERA_PITCH_DEG)
+    c, s = math.cos(p), math.sin(p)
+    xn, yn = np.meshgrid((np.arange(INTR.width) - INTR.ppx) / INTR.fx, (np.arange(INTR.height) - INTR.ppy) / INTR.fy)
+    down = yn * c + s
+    img = np.full((INTR.height, INTR.width, 3), 110, np.uint8)  # walls above the horizon
+    floor_px = down > 1e-6
+    t = np.where(floor_px, config.CAMERA_HEIGHT_M / np.where(floor_px, down, 1), 0)
+    forward, lateral = (c - yn * s) * t, xn * t + config.CAMERA_LATERAL_OFFSET_M
+    img[floor_px] = floor
+    slope = math.tan(math.radians(heading_deg))
+    for centre in centres:
+        img[floor_px & (np.abs(lateral - (centre + slope * forward)) < half_width)] = tile
+    return img
+
+
+def test_lane_between_two_strips():
+    from lane import LaneFinder
+    lv = LaneFinder(INTR).find(render_strips([-0.5, 0.7]))
+    lane = lv.lane
+    assert lane and lane.left and lane.right, lane
+    assert abs(lane.offset_m - 0.1) < 0.04 and abs(lane.width_m - 1.2) < 0.06, lane
+    assert abs(lane.heading_deg) < 1.5, lane
+
+
+def test_lane_heading():
+    from lane import LaneFinder
+    lane = LaneFinder(INTR).find(render_strips([-0.6, 0.6], heading_deg=8.0)).lane
+    assert lane and abs(lane.heading_deg - 8.0) < 1.5 and abs(lane.offset_m) < 0.05, lane
+
+
+def test_lane_one_strip_uses_remembered_width():
+    from lane import LaneFinder
+    finder = LaneFinder(INTR)
+    finder.find(render_strips([-0.6, 0.6]))
+    lane = finder.find(render_strips([-0.6])).lane
+    assert lane and lane.right is None and abs(lane.offset_m) < 0.05, lane
+
+
+def test_no_strips_no_lane():
+    from lane import LaneFinder
+    assert LaneFinder(INTR).find(render_strips([])).lane is None
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)

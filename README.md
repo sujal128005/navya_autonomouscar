@@ -179,6 +179,37 @@ All tunable numbers live in `autopilot/config.py`.
    1.5 s it moves off again.
 7. End the run with CH5 back to MANUAL. On the laptop, SPACE pauses and Q quits.
 
+## Corridor viewer: lane and 3D map
+
+The lane is the floor between two black tile strips, one on each side of the car.
+
+```bash
+cd autopilot
+python corridor_view.py
+```
+
+This program only looks; it never drives the car. Two windows open:
+
+- **Navya camera** has two parts:
+  - The live picture with the strips (yellow) and the lane centre (green) drawn in.
+  - A **bird's-eye floor map**: black tiles in yellow, anything standing on the floor in red.
+  - The text shows how far the lane centre is to the left or right of the car, the lane's heading
+    (+ = lane bends right), and the lane width.
+- **Navya 3D** is a live 3D point cloud in real colours. Obstacles in the car's path are red and
+  the strips are yellow; the car is outlined in blue.
+  - Drag with the left mouse button to rotate, and use the wheel to zoom.
+  - Keys **1 / 2 / 3** switch to the behind, top and side views.
+- **S** saves a snapshot to `autopilot/captures/`: both pictures plus a `.ply` 3D file that opens
+  in MeshLab or CloudCompare. **Q** quits.
+
+Run `calibrate_camera.py --write` first. The floor map relies on the camera height and tilt.
+
+| Problem | Change in `config.py` |
+|---|---|
+| Strips not found (shown grey, not yellow) | raise `LANE_DARK_MAX` (e.g. 90) |
+| Shadows or reflections show up as strips | lower `LANE_DARK_MAX` (e.g. 50) |
+| Grout lines or cables picked up | raise `LANE_MIN_WIDTH_M` |
+
 ## Tuning (autopilot/config.py)
 
 | Symptom | Change |

@@ -45,3 +45,17 @@ DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 
 # --- Straight-line trim: positive = right wheel faster. Car veers right -> raise it.
 TRIM = 0.0
+
+# --- Corridor viewer and lane finder (python corridor_view.py) ---
+# The lane is the floor between two black tile strips, one each side of the car.
+VIEW_FPS = 15               # depth + colour together; 15 is safe even on USB 2
+VIEW_POINT_STRIDE = 3       # 3D view draws every 3rd pixel each way
+BEV_RES_M = 0.02            # bird's-eye floor map: 2 cm per cell
+BEV_HALF_WIDTH_M = 2.0      # map covers 2 m either side of the car...
+BEV_MIN_FORWARD_M = 0.5     # ...from 0.5 m...
+BEV_MAX_FORWARD_M = 6.0     # ...to 6 m ahead
+LANE_DARK_MAX = 70          # a floor cell is black tile if darker than this (0-255)...
+LANE_DARK_RATIO = 0.5       # ...and darker than this share of the floor's median brightness
+LANE_MIN_WIDTH_M = 0.05     # ignore dark bits narrower than this (grout lines, cables)
+LANE_MAX_FORWARD_M = 4.0    # fit the strips only up to here; tiles further away are blurry
+LANE_MIN_SAMPLES = 8        # rows of a strip needed before it counts as found
