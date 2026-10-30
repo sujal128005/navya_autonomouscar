@@ -9,6 +9,11 @@ below gives the Arduino a steering angle it can command and check.
 One part does motor, gearbox, position sensor and control. It is the fastest way to working
 steering, and the Arduino simply sends an angle.
 
+> **Ordered (2026-10-31):** the steering-effort test showed the wheels need a firm push, so the
+> 60 kg·cm servo + UBEC below was replaced by the **Pro-Range BL51180-24V brushless, 180 kg·cm**,
+> which runs straight from the 6S LiPo (19.2-25.2 V) with a 10 A fuse. Two keyed battery isolator
+> switches (one per LiPo) were added. Exact order: `docs/navya_bill_robu.xlsx`.
+
 | Qty | Part | Spec to look for | Approx. price (INR) | Why |
 |---|---|---|---|---|
 | 1 | **Digital servo, 60 kg·cm** (e.g. DS5160 / similar) | metal gears, 180° or 270°, 6-8.4 V, steel output shaft, ≥ 50 kg·cm at 7.4 V | 2,000-3,500 | turns the front axle; ~2-3x the torque we estimate is needed |
