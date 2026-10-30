@@ -226,7 +226,25 @@ python vision_view.py --phone      # also on the phone page
   control what it looks for, how sure it must be, and speed vs. small-object range.
 - **Distance:** the nearer part of the middle of each box, so background showing around a person
   doesn't count.
-- This program only looks; it is not yet connected to the driving.
+- `vision_view.py` only looks. To drive with it, use the autopilot's `--vision` option (below).
+
+### Driving with object detection
+
+```bash
+python navya_autopilot.py --phone --vision
+```
+
+- **People in or near the path:** the car stops `PERSON_EXTRA_MARGIN_M` (1 m) further away than
+  for other obstacles, at 3.0 m instead of 2.0 m.
+- **Stop sign within 2.5 m:** the car stops, waits 3 s, drives on, and ignores stop signs for 5 s
+  so it can pass the sign. The phone and terminal show `STOP_SIGN` and the countdown.
+  - **Print one:** a red octagon with white "STOP", at least A4 size.
+  - **Place it beside the path** (0.5–1 m to the side, 0.5–1 m high) so the camera sees it. If you
+    put it *in* the path, the depth check treats it as an obstacle and waits until it's removed.
+- **Detection can only make the car more careful.** It runs in a separate thread; the depth
+  obstacle check still runs every frame. If detections are late (over 0.5 s), they're ignored and
+  the car behaves exactly as without `--vision`.
+- Model loading adds about 8 s at start-up.
 
 ## Corridor viewer: lane and 3D map
 

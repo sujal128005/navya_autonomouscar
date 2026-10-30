@@ -3,6 +3,7 @@
 Run on the laptop riding in the car, with the D435i and the Arduino plugged in:
     python navya_autopilot.py --show            # drive, with a live depth window
     python navya_autopilot.py --phone           # drive, and watch it from a phone
+    python navya_autopilot.py --phone --vision  # + object detection: people, stop signs
     python navya_autopilot.py --dry-run --show  # camera only, no Arduino needed
 
 Keys (terminal or depth window): SPACE = pause/unpause (pause = stop), Q = quit.
@@ -41,7 +42,8 @@ else:
 
 
 def start_camera(with_color=False):
-    """Depth stream (plus colour for the phone view if asked and the USB link manages it)."""
+    """Depth stream, plus colour (phone view / object detection) if asked and the USB link manages it.
+    Returns (pipeline, depth intrinsics, depth scale, colour intrinsics or None)."""
     for color in ([True, False] if with_color else [False]):
         pipeline = rs.pipeline()
         cfg = rs.config()
@@ -55,11 +57,16 @@ def start_camera(with_color=False):
         except RuntimeError as e:
             if not color:
                 raise
-            print(f"Colour camera could not start alongside depth ({e}); the phone gets the depth view only.")
+            print(f"Colour camera could not start alongside depth ({e}); "
+                  "no camera picture on the phone and no object detection.")
     device = profile.get_device()
     depth_scale = device.first_depth_sensor().get_depth_scale()
     i = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
     intr = Intrinsics(i.width, i.height, i.fx, i.fy, i.ppx, i.ppy)
+    color_intr = None
+    if color:
+        c = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        color_intr = Intrinsics(c.width, c.height, c.fx, c.fy, c.ppx, c.ppy)
     usb = device.get_info(rs.camera_info.usb_type_descriptor) \
         if device.supports(rs.camera_info.usb_type_descriptor) else "?"
     print(f"Camera: {device.get_info(rs.camera_info.name)}, USB {usb}, "
@@ -67,7 +74,7 @@ def start_camera(with_color=False):
     if usb.startswith("2"):
         print("WARNING: camera is on USB 2. Use a blue USB 3 port/cable, or lower "
               "DEPTH_WIDTH/HEIGHT to 424x240 in config.py.")
-    return pipeline, intr, depth_scale
+    return pipeline, intr, depth_scale, color_intr
 
 
 def put_lines(img, lines):
@@ -92,6 +99,8 @@ def main():
     parser.add_argument("--show", action="store_true", help="show the depth view with the corridor highlighted")
     parser.add_argument("--phone", action="store_true", help="serve the camera, depth view and status to a phone")
     parser.add_argument("--phone-port", type=int, default=8080)
+    parser.add_argument("--vision", action="store_true",
+                        help="object detection: stop further from people, stop at stop signs")
     args = parser.parse_args()
 
     link = None
@@ -109,7 +118,18 @@ def main():
                             {"Pause (hold stopped)": "pause", "Resume": "resume"}, port=args.phone_port)
         phone.print_addresses()
 
-    pipeline, intr, depth_scale = start_camera(with_color=args.phone)
+    vision = rules = align = None
+    if args.vision:
+        from vision import ObjectDetector, draw
+        from vision_rules import VisionRules, VisionWorker, summary
+        print("Loading the YOLO model...")
+        object_detector = ObjectDetector()
+
+    pipeline, intr, depth_scale, color_intr = start_camera(with_color=args.phone or args.vision)
+    if args.vision and color_intr:
+        vision = VisionWorker(object_detector, color_intr, depth_scale)
+        rules = VisionRules()
+        align = rs.align(rs.stream.color)
     detector = CorridorDetector(intr, depth_scale)
     planner = SpeedPlanner()
     paused = False
@@ -130,10 +150,13 @@ def main():
                 frames = None
             now = time.monotonic()
 
-            if phone and frames:
-                color_frame = frames.get_color_frame()
-                if color_frame:
-                    phone_color = np.array(color_frame.get_data())
+            color_frame = frames.get_color_frame() if frames and color_intr else None
+            if color_frame:
+                phone_color = np.array(color_frame.get_data())
+                if vision and frames.get_depth_frame():
+                    aligned_depth = align.process(frames).get_depth_frame()
+                    if aligned_depth:
+                        vision.submit(phone_color, np.array(aligned_depth.get_data()))
             depth_frame = frames.get_depth_frame() if frames else None
             if not depth_frame:
                 # A colour-only frame set is normal; only a real gap in depth stops the car.
@@ -153,8 +176,16 @@ def main():
             if link and link.status_age_s() > 0.5:
                 mode = "NO_LINK"
             driving = (mode == "AUTO" or args.dry_run) and not paused
-            if driving:
-                speed, brake = planner.update(m.distance_m, now)
+            detections = vision.latest() if vision else []
+            rule = rules.evaluate(detections, now) if rules and driving else None
+            if driving and rule and rule.hold:
+                planner.reset()   # moves off again through the normal resume delay
+                speed, brake = 0, True
+            elif driving:
+                distance = m.distance_m
+                if rule and rule.distance_m is not None:
+                    distance = rule.distance_m if distance is None else min(distance, rule.distance_m)
+                speed, brake = planner.update(distance, now)
             else:
                 planner.reset()
                 speed, brake = 0, True
@@ -168,14 +199,19 @@ def main():
                 frames_seen, fps_t0 = 0, now
 
             dist = "BLIND" if m.blind else ("clear" if m.distance_m is None else f"{m.distance_m:.2f} m")
-            state = "PAUSED" if paused else (planner.state if driving else "IDLE")
-            summary = f"{mode:8} {state:9} obstacle {dist:9} speed {left}/{right}" + (" BRAKE" if brake else "")
+            state = "PAUSED" if paused else ("STOP_SIGN" if rule and rule.hold else
+                                             (planner.state if driving else "IDLE"))
+            line = f"{mode:8} {state:9} obstacle {dist:9} speed {left}/{right}" + (" BRAKE" if brake else "")
+            if rule and rule.reason:
+                line += f"  [{rule.reason}]"
             if state != last_state or now - last_print > 0.5:
                 pwm = f" pwm {link.status.pwm_left}/{link.status.pwm_right}" if link else ""
-                print(f"{summary}{pwm}  ({m.points} pts, {fps:.0f} fps)")
+                print(f"{line}{pwm}  ({m.points} pts, {fps:.0f} fps)")
                 last_print, last_state = now, state
 
             lines = [f"{mode} {state}", f"obstacle {dist}", f"speed {left}/{right}{' BRAKE' if brake else ''}"]
+            if rule and rule.reason:
+                lines.append(rule.reason)
             key = read_key()
             if args.show or phone:
                 vis = depth_view(depth_raw, m, detector.stride, lines)
@@ -186,11 +222,15 @@ def main():
                 if phone:
                     phone.publish("depth", vis)
                     if phone_color is not None:
-                        phone.publish("camera", put_lines(phone_color.copy(), lines))
-                    phone.set_status(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
-                                     brake="ON" if brake else "off",
-                                     pwm=f"{link.status.pwm_left}/{link.status.pwm_right}" if link else "-",
-                                     fps=f"{fps:.0f}")
+                        cam = draw(phone_color.copy(), detections) if vision else phone_color.copy()
+                        phone.publish("camera", put_lines(cam, lines))
+                    status = dict(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
+                                  brake="ON" if brake else "off",
+                                  pwm=f"{link.status.pwm_left}/{link.status.pwm_right}" if link else "-",
+                                  fps=f"{fps:.0f}")
+                    if vision:
+                        status.update(objects=summary(detections), vision_fps=f"{vision.fps:.0f}")
+                    phone.set_status(**status)
                     for cmd in phone.pop_commands():
                         if cmd == "pause" and not paused:
                             key = " "
@@ -206,6 +246,8 @@ def main():
     finally:
         if link:
             link.close()
+        if vision:
+            vision.close()
         pipeline.stop()
         if phone:
             phone.close()

@@ -192,6 +192,34 @@ def test_object_distance_ignores_background():
     assert box_distance(np.zeros((480, 640), np.uint16), 0.001, (250, 150, 390, 400), intr) == (None, None)
 
 
+def test_vision_rules_people():
+    from vision import Detection
+    from vision_rules import VisionRules
+    r = VisionRules()
+    ahead = Detection("person", 0.9, (0, 0, 1, 1), distance_m=3.5, lateral_m=0.1)
+    beside = Detection("person", 0.9, (0, 0, 1, 1), distance_m=2.0, lateral_m=1.5)
+    res = r.evaluate([ahead, beside], 0.0)
+    assert abs(res.distance_m - (3.5 - config.PERSON_EXTRA_MARGIN_M)) < 1e-6 and not res.hold, res
+    assert r.evaluate([beside], 0.0).distance_m is None          # well to the side: not in the way
+    no_depth = Detection("person", 0.9, (0, 0, 1, 1))
+    assert r.evaluate([no_depth], 0.0).distance_m is None        # no distance: rely on depth check
+
+
+def test_vision_rules_stop_sign():
+    from vision import Detection
+    from vision_rules import VisionRules
+    r = VisionRules()
+    sign = Detection("stop sign", 0.9, (0, 0, 1, 1), distance_m=config.STOP_SIGN_TRIGGER_M - 0.5, lateral_m=0.8)
+    far = Detection("stop sign", 0.9, (0, 0, 1, 1), distance_m=config.STOP_SIGN_TRIGGER_M + 1.0, lateral_m=0.8)
+    assert not r.evaluate([far], 0.0).hold                       # too far: keep going
+    assert r.evaluate([sign], 1.0).hold                          # stop
+    assert r.evaluate([], 1.0 + config.STOP_SIGN_WAIT_S - 0.1).hold   # still waiting, even if sign not seen
+    t = 1.0 + config.STOP_SIGN_WAIT_S + 0.1
+    assert not r.evaluate([sign], t).hold                        # waited: drive on past the sign
+    assert not r.evaluate([sign], t + config.STOP_SIGN_IGNORE_S - 0.2).hold
+    assert r.evaluate([sign], t + config.STOP_SIGN_IGNORE_S + 0.1).hold   # a later sign counts again
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)

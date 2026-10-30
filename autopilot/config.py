@@ -56,6 +56,16 @@ DETECT_CLASSES = [          # what to look for ([] = all 80 COCO classes)
     "chair", "bench", "backpack", "handbag", "suitcase", "bottle", "cup", "potted plant",
     "dining table", "couch", "tv", "laptop", "cell phone",
 ]
+DETECT_THREADS = 4          # CPU threads for YOLO; the rest stay free for the driving loop
+
+# --- Object-aware driving (python navya_autopilot.py --vision) ---
+# Detection only ever makes the car more careful; the depth obstacle check always runs.
+PERSON_EXTRA_MARGIN_M = 1.0     # people: stop this much further away than for other obstacles
+PERSON_SIDE_MARGIN_M = 0.3      # a person this far outside the car's corridor still counts
+STOP_SIGN_TRIGGER_M = 2.5       # stop when a stop sign is closer than this...
+STOP_SIGN_WAIT_S = 3.0          # ...wait this long...
+STOP_SIGN_IGNORE_S = 5.0        # ...then drive on, ignoring stop signs for this long to pass it
+VISION_MAX_AGE_S = 0.5          # detections older than this are ignored
 
 # --- Corridor viewer and lane finder (python corridor_view.py) ---
 # "walls":  lane = free corridor between the walls, from depth (works on shiny floors)

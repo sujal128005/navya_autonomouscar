@@ -41,8 +41,10 @@ def box_distance(depth_raw: np.ndarray, depth_scale: float, box, intr: Intrinsic
 
 class ObjectDetector:
     def __init__(self, model_path: Path = MODEL_PATH):
+        import torch
         from ultralytics import YOLO   # imported here: slow to load, and only needed for detection
 
+        torch.set_num_threads(config.DETECT_THREADS)
         self.model = YOLO(str(model_path))
         self.names = self.model.names
         wanted = set(config.DETECT_CLASSES)
