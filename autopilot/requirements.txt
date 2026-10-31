@@ -5,4 +5,4 @@ pyrealsense2
 # optional: --vision (fast: + openvino), Ask Navya
 ultralytics
 openvino
-anthropic
+# anthropic   (only if you add "claude" to ASK_PROVIDERS)

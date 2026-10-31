@@ -380,23 +380,67 @@ def test_phone_settings_and_ask_endpoints():
         p.close()
 
 
-def test_ask_navya_request_and_no_key():
+def test_ask_navya_providers_and_fallback():
+    """Gemini/Groq requests are built right, and a failing provider falls through to the next.
+    No network: urlopen is replaced by a fake that records requests and plays back replies."""
+    import io
+    import json
     import os
-    from ask_navya import AskNavya
-    a = AskNavya()
-    req = a.build_request(b"\xff\xd8jpeg", "what do you see?", "nearest obstacle in path clear")
-    assert req["model"] == "claude-opus-5-5" and req["fallbacks"] == "default"
-    assert req["betas"] == ["server-side-fallback-2026-07-01"]
-    image, text = req["messages"][0]["content"]
-    assert image["type"] == "image" and image["source"]["media_type"] == "image/jpeg"
-    assert "what do you see?" in text["text"] and "obstacle" in text["text"]
-    saved = {k: os.environ.pop(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN") if k in os.environ}
+    import urllib.error
+    import ask_navya
+
+    calls = []
+
+    class Reply(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake_urlopen(script):
+        def opener(request, timeout=None):
+            body = json.loads(request.data)
+            calls.append((request.full_url, dict(request.header_items()), body))
+            outcome = script.pop(0)
+            if isinstance(outcome, int):
+                raise urllib.error.HTTPError(request.full_url, outcome, "err", {}, None)
+            return Reply(json.dumps(outcome).encode())
+        return opener
+
+    gemini_ok = {"candidates": [{"content": {"parts": [{"text": "A person 2 m ahead."}]}}]}
+    groq_ok = {"choices": [{"message": {"content": "<think>hmm</think>Clear corridor, door on the left."}}]}
+    saved_env = {k: os.environ.pop(k) for k in ("GEMINI_API_KEY", "GROQ_API_KEY") if k in os.environ}
+    real_urlopen, real_file = ask_navya.urllib.request.urlopen, ask_navya.KEYS_FILE
+    ask_navya.KEYS_FILE = ask_navya.Path("does-not-exist.env")
     try:
-        a._busy = True
-        a._run(b"\xff\xd8jpeg", "q", "")                                  # no credentials on this machine
-        assert not a._busy and ("API key" in a.answer or "not set up" in a.answer), a.answer
+        a = ask_navya.AskNavya()
+        assert "No AI key" in a.describe(b"jpg", "q", "")               # nothing configured
+
+        os.environ["GEMINI_API_KEY"], os.environ["GROQ_API_KEY"] = "g-key", "q-key"
+        ask_navya.urllib.request.urlopen = fake_urlopen([gemini_ok])
+        answer = a.describe(b"jpg", "any people?", "nearest obstacle 2.1 m")
+        assert answer.startswith("A person 2 m ahead.") and "[Gemini" in answer, answer
+        url, headers, body = calls[-1]
+        assert config.GEMINI_MODEL in url and "key=" not in url        # key in a header, not the URL
+        assert headers.get("X-goog-api-key") == "g-key"
+        parts = body["contents"][0]["parts"]
+        assert parts[1]["inline_data"]["mime_type"] == "image/jpeg" and "any people?" in parts[0]["text"]
+
+        ask_navya.urllib.request.urlopen = fake_urlopen([429, groq_ok])   # Gemini over its free limit
+        answer = a.describe(b"jpg", "q", "")
+        assert answer.startswith("Clear corridor, door on the left.") and "<think>" not in answer
+        assert "[Groq" in answer and "Gemini: free limit reached" in answer, answer
+        url, headers, body = calls[-1]
+        assert url.endswith("/chat/completions") and headers.get("Authorization") == "Bearer q-key"
+        assert body["model"] == config.GROQ_MODEL
+        assert body["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+        ask_navya.urllib.request.urlopen = fake_urlopen([500, 401])      # both fail
+        answer = a.describe(b"jpg", "q", "")
+        assert answer.startswith("No AI could answer") and "Groq: invalid key" in answer, answer
     finally:
-        os.environ.update(saved)
+        ask_navya.urllib.request.urlopen, ask_navya.KEYS_FILE = real_urlopen, real_file
+        for k in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+            os.environ.pop(k, None)
+        os.environ.update(saved_env)
 
 
 def test_trim():

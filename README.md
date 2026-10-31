@@ -283,12 +283,22 @@ python corridor_view.py --phone            # camera + bird's-eye map, 3D map, la
 - Values are limited to safe ranges, and related distances adjust themselves. For example, the
   resume distance always stays beyond the stop distance.
 
-**Ask Navya:** tap it (optionally type a question) and Claude describes the current camera
-picture: people, obstacles, signs. The answer appears on the page a few seconds later.
-- It only describes; it never drives.
-- It needs `pip install anthropic`, internet on the laptop, and your own API key, set in the
-  terminal before starting: `$env:ANTHROPIC_API_KEY = "<your key>"`.
-- It uses Claude Opus 5.5 at low effort, with automatic refusal fallback.
+**Ask Navya:** tap it (optionally type a question) and a free vision AI describes the current
+camera picture: people, obstacles, signs. The answer appears on the page a few seconds later.
+- **It only describes; it never drives.**
+- **Fallback:** it tries **Google Gemini** first (`gemini-3.5-flash-lite`). If that fails (free
+  limit reached, error, timeout, empty answer), it asks **Groq** (`qwen/qwen3.8-27b`). The answer
+  says which one replied, e.g. `[Gemini, 2 s]` or `[Groq, 3 s - Gemini: free limit reached]`.
+  The order and models are in `config.py` (`ASK_PROVIDERS`, `GEMINI_MODEL`, `GROQ_MODEL`).
+- **Free keys, no card needed:**
+  1. **Gemini:** [aistudio.google.com](https://aistudio.google.com) → *Get API key*.
+  2. **Groq:** [console.groq.com](https://console.groq.com) → *API Keys*.
+  3. Copy `autopilot/keys.env.example` to `autopilot/keys.env` and paste the keys there.
+     `keys.env` is git-ignored, so the keys never go to GitHub.
+  4. One key works; two give the fallback.
+- **Needs internet on the laptop.** Phones on the laptop's hotspot share the laptop's internet.
+- **Free tiers may use what you send** (camera pictures of the corridor) to improve the
+  provider's products, so avoid using it in private spaces.
 
 The autopilot page has **Pause** and **Resume** buttons. Pause holds the car stopped, the same as
 SPACE on the laptop. Wi-Fi can lag or drop, so **the transmitter stays the emergency stop**.
@@ -455,7 +465,7 @@ autopilot/steering_calibrate.py        teaches the Arduino full left / straight 
 autopilot/preflight.py                 checks everything before a run
 autopilot/battery.py                   LiPo low-voltage warning and stop
 autopilot/live_settings.py             phone sliders: live changes, saved to config.py
-autopilot/ask_navya.py                 "Ask Navya": Claude describes the camera picture
+autopilot/ask_navya.py                 "Ask Navya": free vision AI (Gemini, Groq fallback) describes the camera picture
 autopilot/lane_follow.py               pure-pursuit steering towards the lane centre
 autopilot/config.py                    every tunable number
 autopilot/navya_autopilot.py           the demo program

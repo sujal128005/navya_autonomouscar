@@ -64,6 +64,12 @@ STEER_RATE_PER_S = 1500         # steering command may change at most this much 
 LANE_LOST_HOLD_S = 0.5          # lane missing for less than this: keep the last steering
 LANE_LOST_SPEED = 80            # lane missing for longer: steer straight and creep at this speed
 
+# --- Ask Navya (phone button; display only) ---
+ASK_PROVIDERS = ["gemini", "groq"]     # tried in this order; the next one answers if one fails
+GEMINI_MODEL = "gemini-3.5-flash-lite" # free tier, accepts images
+GROQ_MODEL = "qwen/qwen3.8-27b"        # free tier, accepts images
+ASK_TIMEOUT_S = 20
+
 # --- Object detection (python vision_view.py) ---
 DETECT_CONFIDENCE = 0.4     # ignore detections the model is less sure about than this
 DETECT_IMAGE_SIZE = 480     # model input size; smaller = faster, larger = sees smaller things

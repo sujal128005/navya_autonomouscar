@@ -227,10 +227,14 @@ def check_phone():
         report(FAIL, "Port 8080 already in use", "another Navya program is still running - close it")
     finally:
         probe.close()
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        report(OK, "Ask Navya: API key set")
+    from ask_navya import NAMES, AskNavya
+    ready = AskNavya.configured()
+    if len(ready) >= 2:
+        report(OK, "Ask Navya: " + " -> ".join(NAMES[p] for p in ready), "with fallback")
+    elif ready:
+        report(OK, f"Ask Navya: {NAMES[ready[0]]} only", "add a second free key in keys.env for a fallback")
     else:
-        report(INFO, "Ask Navya: no ANTHROPIC_API_KEY", "set it in this terminal to use the Ask Navya button")
+        report(INFO, "Ask Navya: no free AI key yet", "copy keys.env.example to keys.env and add a key")
 
 
 def main():
