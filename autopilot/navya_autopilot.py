@@ -25,6 +25,9 @@ import config
 from navya_link import NavyaLink
 from obstacle import CorridorDetector, Intrinsics
 from phone_stream import PhoneStream
+import live_settings
+from ask_navya import AskNavya
+from battery import BatteryGuard, describe
 from lane import WallLaneFinder
 from lane_follow import LaneFollower
 from speed_planner import SpeedPlanner, apply_trim
@@ -140,7 +143,9 @@ def main():
     phone = None
     if args.phone:
         phone = PhoneStream("Navya autopilot", {"camera": "Camera", "depth": "Depth (white = obstacle zone)"},
-                            {"Pause (hold stopped)": "pause", "Resume": "resume"}, port=args.phone_port)
+                            {"Pause (hold stopped)": "pause", "Resume": "resume"}, port=args.phone_port,
+                            settings=live_settings.SETTINGS, settings_values=live_settings.values,
+                            ask=True)
         phone.print_addresses()
 
     vision = rules = align = None
@@ -161,6 +166,10 @@ def main():
         align = rs.align(rs.stream.color)
     detector = CorridorDetector(intr, depth_scale)
     planner = SpeedPlanner()
+    guard = BatteryGuard()
+    last_battery = ""
+    note, note_at = "", 0.0
+    asker = AskNavya() if phone else None
     walls = WallLaneFinder() if args.steer else None
     follower = LaneFollower() if args.steer else None
     if args.steer and link and link.status.steer_state in ("-", "NOCAL", "NONE"):
@@ -235,6 +244,16 @@ def main():
                     speed = min(speed, decision.speed_cap)
             elif follower:
                 follower.reset()
+
+            s = link.status if link else None
+            battery = guard.update(s.battery_left_v, s.battery_right_v, driving, now) if s else ""
+            if battery == "STOP":
+                planner.reset()
+                speed, brake = 0, True
+            if battery and battery != last_battery:
+                print("BATTERY LOW - stopped. Charge or swap the LiPos." if battery == "STOP"
+                      else f"Battery getting low: {describe(s.battery_left_v)} / {describe(s.battery_right_v)}")
+            last_battery = battery
             left, right = apply_trim(speed)
             if link:
                 link.drive(left, right, brake, steer)
@@ -245,8 +264,10 @@ def main():
                 frames_seen, fps_t0 = 0, now
 
             dist = "BLIND" if m.blind else ("clear" if m.distance_m is None else f"{m.distance_m:.2f} m")
-            state = "PAUSED" if paused else ("STOP_SIGN" if rule and rule.hold else
+            state = "PAUSED" if paused else ("BATTERY" if battery == "STOP" else
+                                             "STOP_SIGN" if rule and rule.hold else
                                              (planner.state if driving else "IDLE"))
+            batteries = f"{describe(s.battery_left_v)} / {describe(s.battery_right_v)}" if s else "-"
             line = f"{mode:8} {state:9} obstacle {dist:9} speed {left}/{right}" + (" BRAKE" if brake else "")
             if rule and rule.reason:
                 line += f"  [{rule.reason}]"
@@ -263,6 +284,8 @@ def main():
                 lines.append(rule.reason)
             if follower:
                 lines.append(f"steer {steer:+d} {steer_info}")
+            if battery:
+                lines.append(f"battery {batteries}" + (" - STOPPED" if battery == "STOP" else " - low"))
             key = read_key()
             recording = recorder is not None and recorder.active
             if args.show or phone or recording:
@@ -279,7 +302,6 @@ def main():
                     recorder.frame("depth", vis)
                     if cam is not None:
                         recorder.frame("camera", cam)
-                    s = link.status if link else None
                     recorder.log(mode=mode, state=state,
                                  obstacle_m="" if m.distance_m is None else f"{m.distance_m:.2f}",
                                  speed_left=left, speed_right=right, brake=int(brake),
@@ -289,7 +311,9 @@ def main():
                                  objects=summary(detections) if vision else "", fps=f"{fps:.0f}",
                                  steer_cmd=steer if follower else "",
                                  steer_pos=s.steer_pos if s and follower else "",
-                                 lane=steer_info)
+                                 lane=steer_info,
+                                 battery_left_v=f"{s.battery_left_v:.2f}" if s else "",
+                                 battery_right_v=f"{s.battery_right_v:.2f}" if s else "")
                 if phone:
                     phone.publish("depth", vis)
                     if cam is not None:
@@ -297,6 +321,7 @@ def main():
                     status = dict(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
                                   brake="ON" if brake else "off",
                                   pwm=f"{link.status.pwm_left}/{link.status.pwm_right}" if link else "-",
+                                  battery=batteries + (" LOW" if battery else ""),
                                   fps=f"{fps:.0f}")
                     if vision:
                         status.update(objects=summary(detections), vision_fps=f"{vision.fps:.0f}")
@@ -305,12 +330,28 @@ def main():
                                       lane=steer_info or "-")
                     if recording:
                         status.update(recording="ON")
+                    if note and now - note_at < 6:
+                        status.update(note=note)
+                    if asker:
+                        status.update(ai=asker.answer)
                     phone.set_status(**status)
                     for cmd in phone.pop_commands():
                         if cmd == "pause" and not paused:
                             key = " "
                         elif cmd == "resume" and paused:
                             key = " "
+                        elif cmd == "save":
+                            changed = live_settings.save()
+                            note, note_at = "saved to config.py: " + (", ".join(changed) or "no changes"), now
+                            print("Settings " + note)
+                    for name, value in phone.pop_settings():
+                        note, note_at = "set " + live_settings.apply(name, value), now
+                        print("Settings: " + note)
+                    for question in phone.pop_questions():
+                        if asker:
+                            asker.ask(cam if cam is not None else vis, question,
+                                      context=f"mode {mode}, state {state}, nearest obstacle in path {dist}"
+                                              + (f", objects: {summary(detections)}" if vision else ""))
             if key == " ":
                 paused = not paused
                 print("PAUSED - car held stopped" if paused else "Unpaused")

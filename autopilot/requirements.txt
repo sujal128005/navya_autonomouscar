@@ -2,3 +2,7 @@ numpy
 pyserial
 opencv-python
 pyrealsense2
+# optional: --vision (fast: + openvino), Ask Navya
+ultralytics
+openvino
+anthropic

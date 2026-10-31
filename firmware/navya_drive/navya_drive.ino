@@ -29,7 +29,8 @@
     ?                                   print the settings below
   Every STATUS_PERIOD_MS the Uno replies:
     S,<mode>,<ch2_us>,<ch5_us>,<host_ok>,<pwmLeft>,<pwmRight>,<brake>,
-      <ch1_us>,<steer_target>,<steer_pos>,<pot_raw>,<limit_left>,<limit_right>,<steer_state>
+      <ch1_us>,<steer_target>,<steer_pos>,<pot_raw>,<limit_left>,<limit_right>,<steer_state>,
+      <battery_left_mV>,<battery_right_mV>       (0 = no battery divider connected)
 */
 
 #include <EEPROM.h>
@@ -51,6 +52,14 @@ const uint8_t PIN_STEER_POT = A0;      // potentiometer wiper (ends to 5V and GN
 const uint8_t PIN_LIMIT_LEFT = A1;     // limit switch to GND, closed = at full left
 const uint8_t PIN_LIMIT_RIGHT = A2;    // limit switch to GND, closed = at full right
 const uint8_t PIN_STEER_ENABLE = A3;   // BTS7960 R_EN + L_EN
+const uint8_t PIN_BATT_LEFT = A4;      // left LiPo through a 47k / 10k divider
+const uint8_t PIN_BATT_RIGHT = A5;     // right LiPo through a 47k / 10k divider
+
+// ---------------- Battery monitor ----------------
+// LiPo + -> 47k -> pin -> 10k -> GND (battery negatives joined to Arduino GND).
+// 25.2 V full charge reads as 4.42 V at the pin.
+const float BATT_DIVIDER = (47.0 + 10.0) / 10.0;
+const float BATT_ADC_REF_V = 5.0;      // the Uno's 5 V; raise/lower to match a multimeter
 
 // ---------------- Throttle calibration ----------------
 // Find PWM_START with: python throttle_test.py --sweep (wheels off the ground)
@@ -271,6 +280,14 @@ int16_t potToPos(uint16_t raw) {
   long toRight = (long)cal.right - cal.center;
   long p = (d * toLeft > 0) ? -1000L * d / toLeft : 1000L * d / toRight;
   return (int16_t)constrain(p, -1100L, 1100L);
+}
+
+// Battery voltage in millivolts (0 when nothing is connected to the pin).
+uint16_t batteryMv(uint8_t pin) {
+  uint16_t sum = 0;
+  for (uint8_t i = 0; i < 4; i++) sum += analogRead(pin);
+  float volts = sum / 4.0 * BATT_ADC_REF_V / 1023.0 * BATT_DIVIDER;
+  return volts < 3.0 ? 0 : (uint16_t)(volts * 1000.0);
 }
 
 bool limitLeft() { return digitalRead(PIN_LIMIT_LEFT) == LOW; }
@@ -577,6 +594,8 @@ void loop() {
     Serial.print(potRaw); Serial.print(',');
     Serial.print(limitLeft()); Serial.print(',');
     Serial.print(limitRight()); Serial.print(',');
-    Serial.println(steerState);
+    Serial.print(steerState); Serial.print(',');
+    Serial.print(batteryMv(PIN_BATT_LEFT)); Serial.print(',');
+    Serial.println(batteryMv(PIN_BATT_RIGHT));
   }
 }

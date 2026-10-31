@@ -48,6 +48,11 @@ DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 # --- Straight-line trim: positive = right wheel faster. Car veers right -> raise it.
 TRIM = 0.0
 
+# --- Battery monitor (needs the 47k/10k dividers on A4/A5; 6S LiPo) ---
+BATTERY_WARN_V = 22.2           # below this (3.7 V/cell): warning on phone and terminal
+BATTERY_STOP_V = 21.6           # below this for BATTERY_STOP_S while driving: stop and stay stopped
+BATTERY_STOP_S = 3.0            # (voltage dips briefly under load; ignore short dips)
+
 # --- Steering and lane following (python navya_autopilot.py --steer) ---
 # Steering commands run -1000 (full left) .. 1000 (full right); steering_calibrate.py
 # teaches the Arduino where full left / straight / full right are.

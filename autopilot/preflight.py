@@ -1,0 +1,253 @@
+"""Pre-flight check: run before every session or demo.
+
+    python preflight.py
+
+Checks the laptop, Arduino, transmitter, steering, batteries, camera, storage,
+object detection and phone link, and says how to fix anything that is wrong.
+It never moves the car. Exit code 1 if anything FAILED.
+"""
+
+import importlib
+import math
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+
+import config
+
+OK, WARN, FAIL, INFO = "OK", "WARN", "FAIL", "INFO"
+results: list[tuple[str, str, str]] = []
+
+
+def report(status: str, what: str, detail: str = ""):
+    results.append((status, what, detail))
+    print(f"[{status:^4}] {what}" + (f"  -  {detail}" if detail else ""))
+
+
+def check_packages():
+    for name, needed in (("numpy", True), ("cv2", True), ("pyrealsense2", True), ("serial", True),
+                         ("ultralytics", False), ("openvino", False), ("anthropic", False)):
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            if needed:
+                report(FAIL, f"Python package {name}", "pip install -r requirements.txt")
+            else:
+                use = {"ultralytics": "--vision", "openvino": "fast --vision",
+                       "anthropic": "Ask Navya"}[name]
+                report(INFO, f"Python package {name} not installed", f"only needed for {use}")
+    if not any(r[1].startswith("Python package") and r[0] == FAIL for r in results):
+        report(OK, "Python packages")
+
+
+def running_programs() -> set[str]:
+    if os.name != "nt":
+        return set()
+    out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True).stdout
+    return {line.split('","')[0].strip('"').lower() for line in out.splitlines() if line}
+
+
+def check_programs():
+    progs = running_programs()
+    if "serial-monitor.exe" in progs:
+        report(FAIL, "Arduino Serial Monitor is open", "close it - it blocks the Arduino's port")
+    elif "arduino ide.exe" in progs:
+        report(WARN, "Arduino IDE is open", "close it before driving (it can grab the port)")
+    else:
+        report(OK, "Arduino IDE closed")
+
+
+def check_arduino():
+    from serial.tools import list_ports
+
+    from navya_link import ARDUINO_VIDS, NavyaLink, find_port
+    if not config.SERIAL_PORT and not any(p.vid in ARDUINO_VIDS for p in list_ports.comports()):
+        report(FAIL, "Arduino not connected", "plug in the Arduino's USB cable")
+        return
+    try:
+        port = config.SERIAL_PORT or find_port()
+    except RuntimeError as e:
+        report(FAIL, "Arduino not found", str(e))
+        return
+    try:
+        link = NavyaLink(port)
+    except Exception as e:  # serial.SerialException, PermissionError
+        hint = "another program has the port (Arduino IDE / Serial Monitor / a running Navya program)" \
+            if "denied" in str(e).lower() else str(e)
+        report(FAIL, f"Arduino on {port} can't be opened", hint)
+        return
+    try:
+        if not link.wait_ready(6):
+            report(FAIL, f"Arduino on {port} does not answer", "upload firmware/navya_drive/navya_drive.ino")
+            return
+        time.sleep(0.6)
+        s = link.status
+        if link.firmware == "v2":
+            report(OK, f"Arduino on {port}, firmware v2")
+        else:
+            report(WARN, f"Arduino firmware {link.firmware or '?'}",
+                   "upload v2 (and move the brake wires to D11/D12)")
+
+        if s.mode == "NO_RC":
+            report(FAIL, "No radio signal", "turn the transmitter on (receiver LED must be solid)")
+        elif s.mode == "AUTO":
+            report(WARN, "CH5 is in AUTO", "start in MANUAL; switch to AUTO once the program is running")
+        else:
+            report(OK, "Transmitter on, CH5 in MANUAL")
+        if s.mode != "NO_RC" and not 1400 <= s.ch2_us <= 1550:
+            report(WARN, f"Right stick not centred (CH2 = {s.ch2_us})", "let the stick spring back to centre")
+
+        steer = {"OK": (OK, "Steering calibrated"),
+                 "OFF": (OK, "Steering calibrated (motor off: no radio)"),
+                 "NOCAL": (WARN, "Steering not calibrated - run steering_calibrate.py (ignore if not fitted yet)"),
+                 "POT": (FAIL, "Steering pot reading out of range - check its wires (5V, GND, wiper to A0)"),
+                 "STALL": (WARN, "Steering stalled recently - check nothing blocks the wheels"),
+                 "NONE": (INFO, "Steering disabled in firmware")}.get(s.steer_state)
+        if steer:
+            report(steer[0], steer[1])
+
+        from battery import describe
+        volts = [("left", s.battery_left_v), ("right", s.battery_right_v)]
+        if all(v == 0 for _, v in volts):
+            report(INFO, "Battery monitor not wired", "47k/10k dividers to A4/A5 (see README)")
+        for side, v in volts:
+            if v == 0:
+                continue
+            if v < config.BATTERY_STOP_V:
+                report(FAIL, f"{side} LiPo {describe(v)}", "charge it - the car would stop almost at once")
+            elif v < config.BATTERY_WARN_V:
+                report(WARN, f"{side} LiPo {describe(v)}", "getting low; charge soon")
+            else:
+                report(OK, f"{side} LiPo {describe(v)}")
+    finally:
+        link.close()
+
+
+def check_camera():
+    try:
+        import numpy as np
+        import pyrealsense2 as rs
+    except ImportError:
+        return
+    devices = list(rs.context().query_devices())
+    if not devices:
+        report(FAIL, "RealSense camera not found", "plug it into the laptop (blue USB 3 port)")
+        return
+    dev = devices[0]
+    usb = dev.get_info(rs.camera_info.usb_type_descriptor) if dev.supports(rs.camera_info.usb_type_descriptor) else "?"
+    if usb.startswith("3"):
+        report(OK, f"{dev.get_info(rs.camera_info.name)} on USB {usb}")
+    else:
+        report(WARN, f"Camera on USB {usb}", "use a blue USB 3 port / flip the USB-C plug for full speed")
+
+    pipeline = rs.pipeline()
+    cfg = rs.config()
+    cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT, rs.format.z16, config.DEPTH_FPS)
+    try:
+        profile = pipeline.start(cfg)
+    except RuntimeError as e:
+        report(FAIL, "Camera won't start", f"{e} - is another Navya program using it?")
+        return
+    try:
+        scale = profile.get_device().first_depth_sensor().get_depth_scale()
+        intr = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+        frames = [np.array(pipeline.wait_for_frames(2000).get_depth_frame().get_data()) for _ in range(20)]
+        report(OK, "Camera delivers depth frames")
+    except RuntimeError:
+        report(FAIL, "Camera stops sending frames", "re-plug the cable; try another USB 3 port")
+        return
+    finally:
+        pipeline.stop()
+
+    # Does the floor still match the saved calibration? (camera knocked or re-mounted)
+    from calibrate_camera import fit_plane
+    depth = np.median(np.stack(frames[-10:]), axis=0) * scale
+    h, w = depth.shape
+    v0, u0, u1 = int(h * 0.6), int(w * 0.25), int(w * 0.75)
+    vs, us = np.mgrid[v0:h:2, u0:u1:2]
+    z = depth[v0:h:2, u0:u1:2]
+    sel = (z > 0.2) & (z < 3.0)
+    if sel.sum() < 500:
+        report(INFO, "Camera calibration not checked", "no clear floor visible in front of the car")
+        return
+    z = z[sel]
+    pts = np.column_stack([(us[sel] - intr.ppx) / intr.fx * z, (vs[sel] - intr.ppy) / intr.fy * z, z])
+    normal, height = fit_plane(pts)
+    pitch = math.degrees(math.atan2(normal[2], normal[1]))
+    if abs(height - config.CAMERA_HEIGHT_M) > 0.05 or abs(pitch - config.CAMERA_PITCH_DEG) > 3:
+        report(WARN, f"Camera now {height:.2f} m / {pitch:.1f} deg, config says "
+                     f"{config.CAMERA_HEIGHT_M:.2f} m / {config.CAMERA_PITCH_DEG:.1f} deg",
+               "camera moved? with clear floor ahead run: python calibrate_camera.py --write")
+    else:
+        report(OK, f"Camera calibration matches ({height:.2f} m, {pitch:.1f} deg)")
+
+
+def check_storage():
+    from trip_recorder import removable_drives
+    drives = removable_drives()
+    if drives:
+        best = max(drives, key=lambda d: shutil.disk_usage(d).free)
+        report(OK, f"SD card {best} - {shutil.disk_usage(best).free / 1e9:.0f} GB free")
+    else:
+        free_c = shutil.disk_usage("C:\\" if os.name == "nt" else "/").free / 1e9
+        report(WARN if free_c < 10 else INFO, "No SD card inserted",
+               f"--record would use the laptop disk ({free_c:.0f} GB free)")
+
+
+def check_detection():
+    try:
+        from vision import MODEL_PATH, pick_backend
+    except ImportError:
+        return
+    if not MODEL_PATH.exists():
+        report(INFO, "YOLO model not downloaded", "only needed for --vision (see README)")
+        return
+    _, _, backend = pick_backend()
+    report(OK if "OpenVINO" in backend else WARN, f"Object detection: {backend}",
+           "" if "OpenVINO" in backend else "run python export_models.py for the fast version")
+
+
+def check_phone():
+    try:
+        addrs = socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        addrs = []
+    if "192.168.137.1" in addrs:
+        report(OK, "Mobile hotspot on", "phone: join it, open http://192.168.137.1:8080")
+    else:
+        report(WARN, "Mobile hotspot looks off", "Windows Settings > Network > Mobile hotspot (for --phone)")
+    probe = socket.socket()
+    try:
+        probe.bind(("0.0.0.0", 8080))
+        report(OK, "Port 8080 free for the phone page")
+    except OSError:
+        report(FAIL, "Port 8080 already in use", "another Navya program is still running - close it")
+    finally:
+        probe.close()
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        report(OK, "Ask Navya: API key set")
+    else:
+        report(INFO, "Ask Navya: no ANTHROPIC_API_KEY", "set it in this terminal to use the Ask Navya button")
+
+
+def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    print("Navya pre-flight check\n")
+    for check in (check_packages, check_programs, check_arduino, check_camera,
+                  check_storage, check_detection, check_phone):
+        try:
+            check()
+        except Exception as e:  # one broken check must not hide the others
+            report(WARN, f"{check.__name__} could not run", repr(e))
+    fails = sum(1 for r in results if r[0] == FAIL)
+    warns = sum(1 for r in results if r[0] == WARN)
+    print(f"\n{'READY' if not fails else 'NOT READY'}: {fails} failed, {warns} warnings")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

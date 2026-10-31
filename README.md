@@ -74,6 +74,20 @@ The Arduino is in charge of safety. The car stops if any of these happen:
 | **A2** | RIGHT limit switch, other side to GND (closed = at full right) |
 | USB | laptop |
 
+### Battery monitor (optional, 4 resistors)
+
+For each LiPo, wire: **LiPo + → 47 kΩ → Uno pin → 10 kΩ → GND**.
+- Left battery to **A4**, right battery to **A5**.
+- The battery negatives must be joined to the Arduino GND (see Power).
+- Full charge (25.2 V) reads as about 4.4 V at the pin, safely under 5 V.
+
+The phone, terminal and trip log then show each battery's voltage and %:
+- **below 22.2 V:** a warning;
+- **below 21.6 V for 3 s while driving:** the car stops and stays stopped until restarted.
+
+This happens before the controllers would cut out at 21 V mid-run. If the readings are
+slightly off against a multimeter, adjust `BATT_ADC_REF_V` in the firmware.
+
 ### Steering (the toy's own steering motor)
 
 - **Disconnect the toy's blue control board from the steering motor.** Its two motor wires
@@ -190,6 +204,21 @@ All tunable numbers live in `autopilot/config.py`.
    4. Measure where it actually stops. Raise `STOP_DIST_M` if it stops too close,
       then raise speed step by step.
 
+## Pre-flight check (run this first, every time)
+
+```bash
+python preflight.py
+```
+
+It checks, and tells you how to fix anything wrong:
+- Python packages, and that the Arduino IDE / Serial Monitor is closed;
+- Arduino connected with firmware v2, transmitter on, CH5 in MANUAL, stick centred;
+- steering calibrated, and battery voltages;
+- camera on USB 3 and still matching its calibration (warns if it was knocked);
+- SD card and free space, object-detection backend, hotspot on, port 8080 free, Ask Navya key.
+
+It never moves the car. `READY` at the end means go.
+
 ## Demo-day checklist
 
 1. LiPos charged (above 24 V) and the kill switch in reach.
@@ -245,6 +274,21 @@ python corridor_view.py --phone            # camera + bird's-eye map, 3D map, la
    `192.168.137.x` one when on the hotspot.
 3. The phone shows the live pictures and a status bar. The mode turns **green in AUTO**, yellow
    in MANUAL and red with no radio. "NO UPDATES" means the program stopped.
+
+**Live tuning:** open **"Tune settings (live)"** on the autopilot page.
+- The sliders cover cruise speed, slowest speed, start boost, slow-down and stop distances,
+  resume wait, person margin, lane lookahead and trim.
+- Changes apply **immediately** while driving. **Save settings** writes them into `config.py`;
+  without saving, they reset when the program restarts.
+- Values are limited to safe ranges, and related distances adjust themselves. For example, the
+  resume distance always stays beyond the stop distance.
+
+**Ask Navya:** tap it (optionally type a question) and Claude describes the current camera
+picture: people, obstacles, signs. The answer appears on the page a few seconds later.
+- It only describes; it never drives.
+- It needs `pip install anthropic`, internet on the laptop, and your own API key, set in the
+  terminal before starting: `$env:ANTHROPIC_API_KEY = "<your key>"`.
+- It uses Claude Opus 5.5 at low effort, with automatic refusal fallback.
 
 The autopilot page has **Pause** and **Resume** buttons. Pause holds the car stopped, the same as
 SPACE on the laptop. Wi-Fi can lag or drop, so **the transmitter stays the emergency stop**.
@@ -408,6 +452,10 @@ Run `calibrate_camera.py --write` first. The floor map relies on the camera heig
 ```
 firmware/navya_drive/navya_drive.ino   Arduino Uno: RC + laptop -> throttle, brake, steering, safety
 autopilot/steering_calibrate.py        teaches the Arduino full left / straight / full right
+autopilot/preflight.py                 checks everything before a run
+autopilot/battery.py                   LiPo low-voltage warning and stop
+autopilot/live_settings.py             phone sliders: live changes, saved to config.py
+autopilot/ask_navya.py                 "Ask Navya": Claude describes the camera picture
 autopilot/lane_follow.py               pure-pursuit steering towards the lane centre
 autopilot/config.py                    every tunable number
 autopilot/navya_autopilot.py           the demo program

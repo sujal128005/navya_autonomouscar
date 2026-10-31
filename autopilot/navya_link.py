@@ -29,6 +29,8 @@ class DriveStatus:
     limit_left: bool = False
     limit_right: bool = False
     steer_state: str = "-"    # OK / OFF / NOCAL / POT / STALL / RAW / NONE
+    battery_left_v: float = 0.0   # 0 = no battery divider connected
+    battery_right_v: float = 0.0
     received_at: float = 0.0
 
 
@@ -118,7 +120,7 @@ class NavyaLink:
 
     def _parse_status(self, line: str):
         parts = line.split(",")
-        if len(parts) not in (8, 15):   # v1 firmware: 8 fields; v2 adds steering
+        if len(parts) not in (8, 15, 17):   # v1: 8 fields; v2 adds steering, then batteries
             return
         try:
             status = DriveStatus(
@@ -131,7 +133,10 @@ class NavyaLink:
                 brake=parts[7] == "1",
                 received_at=time.monotonic(),
             )
-            if len(parts) == 15:
+            if len(parts) == 17:
+                status.battery_left_v = int(parts[15]) / 1000
+                status.battery_right_v = int(parts[16]) / 1000
+            if len(parts) >= 15:
                 status.ch1_us = int(parts[8])
                 status.steer_target = int(parts[9])
                 status.steer_pos = int(parts[10])

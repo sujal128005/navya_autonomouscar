@@ -63,8 +63,10 @@ class SpeedPlanner:
         return config.CRUISE_SPEED, False
 
 
-def apply_trim(speed: int, trim: float = config.TRIM) -> tuple[int, int]:
+def apply_trim(speed: int, trim: float | None = None) -> tuple[int, int]:
     """Split one speed into (left, right) with the straight-line trim applied."""
+    if trim is None:
+        trim = config.TRIM   # read each call so a live change from the phone applies
     left = speed * (1.0 - trim)
     right = speed * (1.0 + trim)
     return (max(0, min(1000, int(round(left)))), max(0, min(1000, int(round(right)))))

@@ -315,6 +315,90 @@ def test_link_status_v1_and_v2():
         navya_link.serial.Serial = real
 
 
+def test_battery_guard():
+    from battery import BatteryGuard, describe
+    g = BatteryGuard()
+    assert g.update(0, 0, True, 0) == ""                                 # monitor not wired
+    assert g.update(24.5, 24.6, True, 0) == ""
+    assert g.update(22.0, 24.6, True, 1) == "LOW"
+    low = config.BATTERY_STOP_V - 0.3
+    assert g.update(low, 24.6, True, 2) == "LOW"                         # brief dip under load
+    assert g.update(24.0, 24.6, True, 2.5) == ""                         # recovered: dip forgotten
+    g.update(low, 24.6, True, 3)
+    assert g.update(low, 24.6, True, 3 + config.BATTERY_STOP_S) == "STOP"
+    assert g.update(24.0, 24.6, False, 10) == "STOP"                     # stays stopped (latched)
+    assert describe(25.2) == "25.2 V (100%)" and describe(0) == "-"
+
+
+def test_live_settings(tmp_dir=None):
+    import tempfile
+    from pathlib import Path
+    import live_settings
+    saved = {n: getattr(config, n) for n in ("STOP_DIST_M", "SLOW_DOWN_DIST_M", "RESUME_DIST_M",
+                                             "DETECT_MAX_M", "CRUISE_SPEED", "TRIM")}
+    try:
+        live_settings.apply("CRUISE_SPEED", 999)
+        assert config.CRUISE_SPEED == 400                                # clamped to the safe range
+        live_settings.apply("TRIM", 0.0349)
+        assert config.TRIM == 0.03                                       # snapped to the 0.01 step
+        live_settings.apply("STOP_DIST_M", 3.6)                          # pushes the others out
+        assert config.SLOW_DOWN_DIST_M >= 4.1 and config.RESUME_DIST_M >= 4.0
+        assert config.DETECT_MAX_M >= config.SLOW_DOWN_DIST_M + 0.7 - 1e-9
+        with tempfile.TemporaryDirectory() as d:
+            copy = Path(d) / "config.py"
+            copy.write_text(live_settings.CONFIG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+            changed = live_settings.save(copy)
+            text = copy.read_text(encoding="utf-8")
+            assert any(c.startswith("CRUISE_SPEED") for c in changed)
+            assert "CRUISE_SPEED = 400" in text and "STOP_DIST_M = 3.6" in text
+            assert "# stop here" in text                                 # comments kept
+    finally:
+        for n, v in saved.items():
+            setattr(config, n, v)
+
+
+def test_phone_settings_and_ask_endpoints():
+    import json
+    import urllib.request
+    import live_settings
+    from phone_stream import PhoneStream
+    p = PhoneStream("t", {}, port=8097, settings=live_settings.SETTINGS,
+                    settings_values=live_settings.values, ask=True)
+    try:
+        base = "http://127.0.0.1:8097"
+        page = urllib.request.urlopen(base + "/").read().decode()
+        assert "Tune settings" in page and "Ask Navya" in page and "Save settings" in page
+        meta = json.loads(urllib.request.urlopen(base + "/settings").read())
+        assert meta["values"]["CRUISE_SPEED"] == config.CRUISE_SPEED and len(meta["meta"]) == len(live_settings.SETTINGS)
+        urllib.request.urlopen(base + "/set?k=CRUISE_SPEED&v=150")
+        urllib.request.urlopen(base + "/set?k=PWM_MAX&v=255")                 # not a phone setting: ignored
+        urllib.request.urlopen(base + "/ask?q=any%20people%3F")
+        urllib.request.urlopen(base + "/cmd?k=save")
+        assert p.pop_settings() == [("CRUISE_SPEED", 150.0)]
+        assert p.pop_questions() == ["any people?"] and p.pop_commands() == ["save"]
+    finally:
+        p.close()
+
+
+def test_ask_navya_request_and_no_key():
+    import os
+    from ask_navya import AskNavya
+    a = AskNavya()
+    req = a.build_request(b"\xff\xd8jpeg", "what do you see?", "nearest obstacle in path clear")
+    assert req["model"] == "claude-opus-5-5" and req["fallbacks"] == "default"
+    assert req["betas"] == ["server-side-fallback-2026-07-01"]
+    image, text = req["messages"][0]["content"]
+    assert image["type"] == "image" and image["source"]["media_type"] == "image/jpeg"
+    assert "what do you see?" in text["text"] and "obstacle" in text["text"]
+    saved = {k: os.environ.pop(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN") if k in os.environ}
+    try:
+        a._busy = True
+        a._run(b"\xff\xd8jpeg", "q", "")                                  # no credentials on this machine
+        assert not a._busy and ("API key" in a.answer or "not set up" in a.answer), a.answer
+    finally:
+        os.environ.update(saved)
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)
