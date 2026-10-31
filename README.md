@@ -50,7 +50,7 @@ The Arduino is in charge of safety. The car stops if any of these happen:
 
 ## Wiring
 
-### Arduino Uno pins
+### Arduino Uno pins (firmware v2)
 
 | Uno pin | Goes to |
 |---|---|
@@ -58,13 +58,36 @@ The Arduino is in charge of safety. The car stops if any of these happen:
 | D10 | RIGHT controller throttle signal (purple) |
 | D8 | LEFT controller F/R (silver) |
 | D7 | RIGHT controller F/R (silver) |
-| D5 | LEFT controller brake wire (optional) |
-| D6 | RIGHT controller brake wire (optional) |
+| **D11** | LEFT controller brake wire (optional), **moved from D5 in v2** |
+| **D12** | RIGHT controller brake wire (optional), **moved from D6 in v2** |
 | GND | BOTH controllers' throttle black wires and F/R black wires |
-| D3 | receiver CH2 signal pin |
-| D2 | receiver CH5 signal pin |
+| D3 | receiver CH2 signal pin (right stick up/down) |
+| D2 | receiver CH5 signal pin (AUTO switch) |
+| **D4** | receiver **CH1** signal pin (right stick left/right = manual steering) |
 | 5V / GND | receiver + / − (any channel's middle / outer pin) |
+| **D5** | BTS7960 **RPWM** |
+| **D6** | BTS7960 **LPWM** |
+| **A3** | BTS7960 **R_EN and L_EN** (both) |
+| **5V / GND** | BTS7960 **VCC / GND** |
+| **A0** | steering potentiometer **middle pin** (outer pins to 5V and GND) |
+| **A1** | LEFT limit switch, other side to GND (closed = at full left) |
+| **A2** | RIGHT limit switch, other side to GND (closed = at full right) |
 | USB | laptop |
+
+### Steering (the toy's own steering motor)
+
+- **Disconnect the toy's blue control board from the steering motor.** Its two motor wires
+  go to the BTS7960 **M+ / M−**.
+- **BTS7960 B+ / B−** ← the car's **12 V battery**, through an **inline 10 A fuse** on B+.
+- **Potentiometer:** fix its body to the chassis and couple its shaft to the steering shaft
+  (rubber or plastic tube, or a 3D-printed adapter), so it turns with the steering. Set it
+  roughly mid-way when the wheels are straight, so neither lock reaches the pot's own end.
+- **Limit switches:** mount one at each lock so the linkage presses it just before the
+  hard stop.
+- The BTS7960's R_IS / L_IS pins are not used.
+- Firmware safety: the steering motor stops on a limit switch, when the pot stops moving
+  for 1.5 s while driven (stall), when the pot wire looks broken, with no radio, and
+  until the steering has been calibrated.
 
 Controller plug colours, from our bring-up:
 
@@ -276,6 +299,44 @@ python navya_autopilot.py --phone --vision
   the car behaves exactly as without `--vision`.
 - Model loading adds about 8 s at start-up.
 
+## Steering and lane following
+
+### 1. Calibrate the steering (once, and again if the pot is moved)
+
+Upload firmware v2, close the Arduino IDE, set the transmitter to **AUTO** (stick centred), then:
+
+```bash
+python steering_calibrate.py
+```
+
+1. It pulses the motor and asks **which way the wheels turned**. Answer `l` or `r`.
+2. It drives to **full left and full right**, stopping at the limit switch or the end stop.
+3. It moves to the middle. Nudge with **A / D** until the wheels point **straight**, then press
+   **Enter**.
+4. It tests left, straight, right. Positions are stored in the Arduino (EEPROM).
+5. Measure the **front-wheel angle at full lock** and put it in `STEER_MAX_DEG` in `config.py`.
+
+After that, **MANUAL mode steers with the right stick (left/right)**. Check the stick's centre
+value in the Serial Monitor (the 9th field of `S,` lines) and set `RC_STEER_CENTER_US` in the
+firmware if it isn't about 1500.
+
+### 2. Lane following
+
+```bash
+python navya_autopilot.py --phone --steer
+```
+
+- The lane is the free corridor between the walls (depth camera).
+- **Pure pursuit** aims at the lane centre `LOOKAHEAD_M` (1.5 m) ahead and steers along the
+  arc that reaches it (wheelbase 0.745 m). It never asks for more than about 17°, so it
+  steers gently.
+- **Lane lost** for over 0.5 s: steer straight and creep at `LANE_LOST_SPEED`.
+- Obstacle stopping and `--vision` work as before, alongside steering.
+- **Tuning:**
+  - Weaving side to side → longer `LOOKAHEAD_M`.
+  - Too lazy in bends → shorter `LOOKAHEAD_M`.
+  - Measure `CAMERA_TO_REAR_AXLE_M` on the car.
+
 ## Corridor viewer: lane and 3D map
 
 `LANE_SOURCE` in `config.py` decides where the lane comes from:
@@ -345,7 +406,9 @@ Run `calibrate_camera.py --write` first. The floor map relies on the camera heig
 ## Repository layout
 
 ```
-firmware/navya_drive/navya_drive.ino   Arduino Uno: RC + laptop -> throttle, brake, safety
+firmware/navya_drive/navya_drive.ino   Arduino Uno: RC + laptop -> throttle, brake, steering, safety
+autopilot/steering_calibrate.py        teaches the Arduino full left / straight / full right
+autopilot/lane_follow.py               pure-pursuit steering towards the lane centre
 autopilot/config.py                    every tunable number
 autopilot/navya_autopilot.py           the demo program
 autopilot/obstacle.py                  depth frame -> nearest obstacle in the car's path
@@ -359,6 +422,6 @@ autopilot/test_logic.py                offline tests with simulated depth images
 ## Next steps (after Demo 1)
 
 - LDROBOT D500 LiDAR as a second obstacle sensor and for mapping.
-- Steering: replace the zip tie with a position-controlled steering actuator.
+- Steering: done in software (toy motor + BTS7960 + potentiometer); test once parts arrive.
 - Wheel speed feedback (hall signals) for closed-loop speed and odometry.
 - Move the autopilot onto an onboard computer (ROS 2).

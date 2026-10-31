@@ -220,6 +220,101 @@ def test_vision_rules_stop_sign():
     assert r.evaluate([sign], t + config.STOP_SIGN_IGNORE_S + 0.1).hold   # a later sign counts again
 
 
+def make_lane(offset, heading_deg=0.0):
+    from lane import Lane, Line
+    centre = Line(offset, math.tan(math.radians(heading_deg)))
+    return Lane(None, None, centre, 1.8, offset, heading_deg)
+
+
+def test_lane_follow_direction_and_limits():
+    from lane_follow import LaneFollower
+    f = LaneFollower()
+    assert f.wheel_angle_deg(make_lane(0.3)) > 0        # lane centre to the right -> steer right
+    assert f.wheel_angle_deg(make_lane(-0.3)) < 0
+    assert abs(f.wheel_angle_deg(make_lane(0.0))) < 1e-9
+    assert f.wheel_angle_deg(make_lane(0.0, 10)) > 0    # lane bends right -> steer right
+    # pure pursuit: atan(2 L y / d^2) with y at the lookahead point
+    x = config.LOOKAHEAD_M + config.CAMERA_TO_REAR_AXLE_M
+    expect = math.degrees(math.atan2(2 * config.WHEELBASE_M * 0.3, x * x + 0.09))
+    assert abs(f.wheel_angle_deg(make_lane(0.3)) - expect) < 1e-9
+
+    # Pure pursuit never asks for more than atan(L / d) (~17 deg here); with a small
+    # full-lock angle the command must still clamp at 1000.
+    saved = config.STEER_MAX_DEG
+    config.STEER_MAX_DEG = 5.0
+    try:
+        t = 0.0
+        f.update(make_lane(1.0), t)
+        for _ in range(50):
+            t += 0.05
+            d = f.update(make_lane(1.0), t)
+        assert d.steer == 1000 and d.speed_cap is None, d   # clamped at full lock
+    finally:
+        config.STEER_MAX_DEG = saved
+
+    f.reset()
+    f.update(make_lane(5.0), 0.0)
+    d = f.update(make_lane(5.0), 0.1)                   # rate limit: 0.1 s of change only
+    assert d.steer == int(config.STEER_RATE_PER_S * 0.1), d
+
+
+def test_lane_follow_lost_lane():
+    from lane_follow import LaneFollower
+    f = LaneFollower()
+    t = 0.0
+    for _ in range(40):                                 # settle on a right-hand lane
+        t += 0.05
+        f.update(make_lane(0.4), t)
+    held = f.update(None, t + 0.05)
+    assert held.steer > 0 and held.speed_cap is None    # short gap: keep steering
+    t += 0.05 + config.LANE_LOST_HOLD_S + 0.01
+    for _ in range(40):
+        t += 0.05
+        d = f.update(None, t)
+    assert d.steer == 0 and d.speed_cap == config.LANE_LOST_SPEED
+
+
+def test_link_status_v1_and_v2():
+    import navya_link
+
+    class FakeSerial:
+        def __init__(self, *a, **k):
+            self.lines = [b"NAVYA READY v2\n",
+                          b"S,AUTO,1464,1848,1,86,86,0,1500,-300,-280,512,0,1,OK\n"]
+            self.out = b""
+
+        def readline(self):
+            time.sleep(0.01)
+            return self.lines.pop(0) if self.lines else b""
+
+        def write(self, b):
+            self.out += b
+
+        def close(self):
+            pass
+
+    import time
+    real = navya_link.serial.Serial
+    navya_link.serial.Serial = FakeSerial
+    try:
+        link = navya_link.NavyaLink("COMX")
+        assert link.wait_ready(1)
+        time.sleep(0.1)
+        s = link.status
+        assert (s.mode, s.steer_target, s.steer_pos, s.pot_raw, s.limit_right, s.steer_state) == \
+               ("AUTO", -300, -280, 512, True, "OK"), s
+        link.drive(100, 100, False, -250)
+        assert link._ser.out.endswith(b"D,100,100,0,-250\n")
+        link._parse_status("S,MANUAL,1464,1000,0,0,0,1")          # v1 status still parsed
+        assert link.status.mode == "MANUAL" and link.status.steer_state == "-"
+        link.firmware = "v1"
+        link.drive(100, 100, False, -250)
+        assert link._ser.out.endswith(b"D,100,100,0\n")           # v1 gets 3 fields only
+        link._stop.set()
+    finally:
+        navya_link.serial.Serial = real
+
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)

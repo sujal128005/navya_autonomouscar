@@ -4,6 +4,7 @@ Run on the laptop riding in the car, with the D435i and the Arduino plugged in:
     python navya_autopilot.py --show            # drive, with a live depth window
     python navya_autopilot.py --phone           # drive, and watch it from a phone
     python navya_autopilot.py --phone --vision  # + object detection: people, stop signs
+    python navya_autopilot.py --phone --steer   # + lane following (steering calibrated first)
     python navya_autopilot.py --dry-run --show  # camera only, no Arduino needed
 
 Keys (terminal or depth window): SPACE = pause/unpause (pause = stop), Q = quit.
@@ -24,6 +25,8 @@ import config
 from navya_link import NavyaLink
 from obstacle import CorridorDetector, Intrinsics
 from phone_stream import PhoneStream
+from lane import WallLaneFinder
+from lane_follow import LaneFollower
 from speed_planner import SpeedPlanner, apply_trim
 from trip_recorder import TripRecorder
 
@@ -119,6 +122,8 @@ def main():
                         help="with --record: also save the full camera data (.bag, ~100 GB/hour) for --replay")
     parser.add_argument("--replay", metavar="BAG",
                         help="run on a recorded raw.bag instead of the camera (never drives the car)")
+    parser.add_argument("--steer", action="store_true",
+                        help="lane following: steer to the corridor centre (needs calibrated steering)")
     args = parser.parse_args()
     if args.replay:
         args.dry_run = True
@@ -156,6 +161,11 @@ def main():
         align = rs.align(rs.stream.color)
     detector = CorridorDetector(intr, depth_scale)
     planner = SpeedPlanner()
+    walls = WallLaneFinder() if args.steer else None
+    follower = LaneFollower() if args.steer else None
+    if args.steer and link and link.status.steer_state in ("-", "NOCAL", "NONE"):
+        print(f"WARNING: steering is not ready on the Arduino ({link.status.steer_state}); "
+              "run steering_calibrate.py. The car will drive straight.")
     paused = False
     last_print = 0.0
     last_state = None
@@ -216,9 +226,18 @@ def main():
             else:
                 planner.reset()
                 speed, brake = 0, True
+
+            steer, steer_info = 0, ""
+            if follower and driving:
+                decision = follower.update(walls.find(*detector.geometry(depth_raw)), now)
+                steer, steer_info = decision.steer, decision.info
+                if decision.speed_cap is not None:
+                    speed = min(speed, decision.speed_cap)
+            elif follower:
+                follower.reset()
             left, right = apply_trim(speed)
             if link:
-                link.drive(left, right, brake)
+                link.drive(left, right, brake, steer)
 
             frames_seen += 1
             if now - fps_t0 >= 1.0:
@@ -231,6 +250,9 @@ def main():
             line = f"{mode:8} {state:9} obstacle {dist:9} speed {left}/{right}" + (" BRAKE" if brake else "")
             if rule and rule.reason:
                 line += f"  [{rule.reason}]"
+            if follower:
+                steer_state = link.status.steer_state if link else "-"
+                line += f"  steer {steer:+d} ({steer_state}) {steer_info}"
             if state != last_state or now - last_print > 0.5:
                 pwm = f" pwm {link.status.pwm_left}/{link.status.pwm_right}" if link else ""
                 print(f"{line}{pwm}  ({m.points} pts, {fps:.0f} fps)")
@@ -239,6 +261,8 @@ def main():
             lines = [f"{mode} {state}", f"obstacle {dist}", f"speed {left}/{right}{' BRAKE' if brake else ''}"]
             if rule and rule.reason:
                 lines.append(rule.reason)
+            if follower:
+                lines.append(f"steer {steer:+d} {steer_info}")
             key = read_key()
             recording = recorder is not None and recorder.active
             if args.show or phone or recording:
@@ -262,7 +286,10 @@ def main():
                                  pwm_left=s.pwm_left if s else "", pwm_right=s.pwm_right if s else "",
                                  ch2_us=s.ch2_us if s else "", ch5_us=s.ch5_us if s else "",
                                  vision=rule.reason if rule else "",
-                                 objects=summary(detections) if vision else "", fps=f"{fps:.0f}")
+                                 objects=summary(detections) if vision else "", fps=f"{fps:.0f}",
+                                 steer_cmd=steer if follower else "",
+                                 steer_pos=s.steer_pos if s and follower else "",
+                                 lane=steer_info)
                 if phone:
                     phone.publish("depth", vis)
                     if cam is not None:
@@ -273,6 +300,9 @@ def main():
                                   fps=f"{fps:.0f}")
                     if vision:
                         status.update(objects=summary(detections), vision_fps=f"{vision.fps:.0f}")
+                    if follower:
+                        status.update(steer=f"{steer:+d} ({link.status.steer_state if link else '-'})",
+                                      lane=steer_info or "-")
                     if recording:
                         status.update(recording="ON")
                     phone.set_status(**status)

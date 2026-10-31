@@ -21,6 +21,14 @@ class DriveStatus:
     pwm_left: int = 0
     pwm_right: int = 0
     brake: bool = True
+    # Steering (firmware v2; stay at defaults with v1 firmware)
+    ch1_us: int = 0
+    steer_target: int = 0     # -1000 full left .. 1000 full right
+    steer_pos: int = 0
+    pot_raw: int = 0
+    limit_left: bool = False
+    limit_right: bool = False
+    steer_state: str = "-"    # OK / OFF / NOCAL / POT / STALL / RAW / NONE
     received_at: float = 0.0
 
 
@@ -38,6 +46,8 @@ class NavyaLink:
         self.port = port or config.SERIAL_PORT or find_port()
         self.status = DriveStatus()
         self.last_line = ""
+        self.firmware = ""
+        self.config: dict[str, str] = {}
         self._ser = serial.Serial(self.port, baud, timeout=0.1)
         self._stop = threading.Event()
         self._ready = threading.Event()
@@ -48,11 +58,26 @@ class NavyaLink:
         """Opening the port resets the Uno; wait for its banner."""
         return self._ready.wait(timeout_s)
 
-    def drive(self, left: int, right: int, brake: bool):
-        self._write(f"D,{int(left)},{int(right)},{1 if brake else 0}\n")
+    def drive(self, left: int, right: int, brake: bool, steer: int = 0):
+        """steer: -1000 full left .. 0 straight .. 1000 full right."""
+        if self.firmware == "v1":   # v1 firmware rejects a 4th field
+            self._write(f"D,{int(left)},{int(right)},{1 if brake else 0}\n")
+        else:
+            self._write(f"D,{int(left)},{int(right)},{1 if brake else 0},{int(steer)}\n")
 
     def raw(self, pwm_left: int, pwm_right: int):
         self._write(f"R,{int(pwm_left)},{int(pwm_right)}\n")
+
+    def steer_raw(self, pwm: int):
+        """Steering motor PWM -255..255 (+ = RPWM). Calibration only; needs AUTO."""
+        self._write(f"M,{int(pwm)}\n")
+
+    def steer_store(self, which: str):
+        """Store the current pot reading as 'L' (full left), 'C' (straight) or 'R' (full right)."""
+        self._write(f"K,{which}\n")
+
+    def steer_set_invert(self, invert: bool):
+        self._write(f"K,I,{1 if invert else 0}\n")
 
     def stop(self):
         self.drive(0, 0, True)
@@ -84,16 +109,19 @@ class NavyaLink:
             line = raw.decode("ascii", errors="replace").strip()
             self.last_line = line
             if line.startswith("NAVYA READY"):
+                self.firmware = line[len("NAVYA READY"):].strip()
                 self._ready.set()
             elif line.startswith("S,"):
                 self._parse_status(line)
+            elif line.startswith("CFG,"):
+                self.config = dict(kv.split("=", 1) for kv in line[4:].split(",") if "=" in kv)
 
     def _parse_status(self, line: str):
         parts = line.split(",")
-        if len(parts) != 8:
+        if len(parts) not in (8, 15):   # v1 firmware: 8 fields; v2 adds steering
             return
         try:
-            self.status = DriveStatus(
+            status = DriveStatus(
                 mode=parts[1],
                 ch2_us=int(parts[2]),
                 ch5_us=int(parts[3]),
@@ -103,6 +131,15 @@ class NavyaLink:
                 brake=parts[7] == "1",
                 received_at=time.monotonic(),
             )
+            if len(parts) == 15:
+                status.ch1_us = int(parts[8])
+                status.steer_target = int(parts[9])
+                status.steer_pos = int(parts[10])
+                status.pot_raw = int(parts[11])
+                status.limit_left = parts[12] == "1"
+                status.limit_right = parts[13] == "1"
+                status.steer_state = parts[14]
+            self.status = status
             self._ready.set()
         except ValueError:
             pass

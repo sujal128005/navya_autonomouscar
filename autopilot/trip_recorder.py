@@ -19,7 +19,8 @@ import cv2
 import config
 
 FIELDS = ["t", "mode", "state", "obstacle_m", "speed_left", "speed_right", "brake",
-          "pwm_left", "pwm_right", "ch2_us", "ch5_us", "vision", "objects", "fps"]
+          "pwm_left", "pwm_right", "ch2_us", "ch5_us", "vision", "objects", "fps",
+          "steer_cmd", "steer_pos", "lane"]
 LOCAL_DIR = Path(__file__).with_name("recordings")
 
 

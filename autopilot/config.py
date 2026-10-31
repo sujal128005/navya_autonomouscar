@@ -48,6 +48,17 @@ DISTANCE_HISTORY = 3        # use the nearest reading of the last N frames
 # --- Straight-line trim: positive = right wheel faster. Car veers right -> raise it.
 TRIM = 0.0
 
+# --- Steering and lane following (python navya_autopilot.py --steer) ---
+# Steering commands run -1000 (full left) .. 1000 (full right); steering_calibrate.py
+# teaches the Arduino where full left / straight / full right are.
+WHEELBASE_M = 0.745             # front to rear axle (measured)
+CAMERA_TO_REAR_AXLE_M = 0.95    # camera lens is this far in front of the rear axle (measure)
+STEER_MAX_DEG = 25.0            # front-wheel angle at full lock (measure after calibrating)
+LOOKAHEAD_M = 1.5               # aim at the lane centre this far ahead (longer = smoother, lazier)
+STEER_RATE_PER_S = 1500         # steering command may change at most this much per second
+LANE_LOST_HOLD_S = 0.5          # lane missing for less than this: keep the last steering
+LANE_LOST_SPEED = 80            # lane missing for longer: steer straight and creep at this speed
+
 # --- Object detection (python vision_view.py) ---
 DETECT_CONFIDENCE = 0.4     # ignore detections the model is less sure about than this
 DETECT_IMAGE_SIZE = 480     # model input size; smaller = faster, larger = sees smaller things
