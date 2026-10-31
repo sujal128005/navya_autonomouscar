@@ -35,15 +35,36 @@ def send_for(link: NavyaLink, pwm: int, seconds: float):
     link.steer_raw(0)
 
 
-def ask(prompt: str, choices: str) -> str:
+def hold_still(link: NavyaLink, seconds: float):
+    """Keep telling the Arduino 'steering motor off'. If it hears nothing for 0.3 s it
+    goes back to normal steering and could turn the wheels by itself, using whatever
+    calibration it still has stored."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        link.steer_raw(0)
+        time.sleep(SEND_PERIOD_S)
+
+
+def wait_key(link: NavyaLink, prompt: str, choices: str) -> str:
+    """Wait for one of `choices` ("\r" = ENTER), holding the steering still meanwhile."""
+    print(prompt, end="", flush=True)
+    if os.name != "nt":
+        answer = (input().strip().lower() or "\r")[:1]
+        return answer if answer in choices else choices[0]
     while True:
-        answer = input(prompt).strip().lower()[:1]
-        if answer in choices:
-            return answer
+        if msvcrt.kbhit():
+            key = msvcrt.getwch().lower()
+            if key in choices:
+                print(key if key.isalpha() else "")
+                return key
+        hold_still(link, SEND_PERIOD_S)
 
 
 def drive_to_end(link: NavyaLink, pwm: int, side: str) -> int:
     """Drive until the limit switch for `side` closes or the pot stops moving."""
+    until = time.monotonic() + 3.0
+    while link.status.steer_state == "STALL" and time.monotonic() < until:
+        hold_still(link, 0.1)        # let an earlier stall cut-off run out first
     last_pot, still_since = link.status.pot_raw, time.monotonic()
     start = time.monotonic()
     while time.monotonic() - start < END_TIMEOUT_S:
@@ -63,8 +84,7 @@ def drive_to_end(link: NavyaLink, pwm: int, side: str) -> int:
             break
     else:
         reason = "timeout"
-    link.steer_raw(0)
-    time.sleep(0.3)
+    hold_still(link, 0.3)
     print(f"  {side}: stopped by {reason}, pot = {link.status.pot_raw}")
     return link.status.pot_raw
 
@@ -79,22 +99,18 @@ def centre(link: NavyaLink, pwm_right: int, pot_left: int, pot_right: int) -> No
             break
         need_right = (pot < middle) == right_increases_pot
         send_for(link, pwm_right if need_right else -pwm_right, 0.08)
-        time.sleep(0.15)
+        hold_still(link, 0.15)
     print("\nNow make the front wheels point exactly straight ahead.")
     print("  A = nudge left, D = nudge right, ENTER = this is straight")
     while True:
-        if os.name == "nt":
-            key = msvcrt.getwch().lower()
-        else:
-            key = (input("a/d/enter: ").strip().lower() or "\r")[:1]
+        key = wait_key(link, f"  pot = {link.status.pot_raw}  ", "ad\r")
         if key == "a":
             send_for(link, -pwm_right, 0.1)
         elif key == "d":
             send_for(link, pwm_right, 0.1)
-        elif key in ("\r", "\n"):
+        else:
             return
-        time.sleep(0.2)
-        print(f"  pot = {link.status.pot_raw}", end="\r")
+        hold_still(link, 0.2)
 
 
 def main():
@@ -125,7 +141,7 @@ def main():
         for pwm in PULSE_PWMS:
             before = link.status.pot_raw
             send_for(link, pwm, 0.4)
-            time.sleep(0.4)
+            hold_still(link, 0.4)
             if abs(link.status.pot_raw - before) > 8:
                 moved_pwm = pwm
                 break
@@ -134,13 +150,13 @@ def main():
             print("The steering did not move. Check: 12 V at the BTS7960, motor wires on M+/M-, "
                   "R_EN/L_EN to A3, RPWM/LPWM to D5/D6, and that the pot turns with the steering.")
             return 1
-        turned = ask("Which way did the front wheels just turn? [l]eft / [r]ight: ", "lr")
+        turned = wait_key(link, "Which way did the front wheels just turn? [l]eft / [r]ight: ", "lr")
         invert = turned == "l"
         link.steer_set_invert(invert)
         pwm_right = -moved_pwm if invert else moved_pwm   # raw PWM that turns the wheels right
 
         print("\nStep 2/4: finding full left and full right (the motor will stop by itself)...")
-        input("  Press ENTER to start. ")
+        wait_key(link, "  Press ENTER to start. ", "\r")
         pot_left = drive_to_end(link, -pwm_right, "left")
         link.steer_store("L")
         pot_right = drive_to_end(link, pwm_right, "right")

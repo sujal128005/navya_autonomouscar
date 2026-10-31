@@ -1,79 +1,52 @@
-# Steering: parts to order
+# Steering: parts and decision
 
-Navya's front wheels are zip-tied straight. The original steering is the toy's DC motor with a
-plastic gearbox and **no position sensor**, so a computer cannot set an angle with it. Either route
-below gives the Arduino a steering angle it can command and check.
+## Decision (31 October 2026)
 
-## Route A (recommended): high-torque servo
+As decided by the professor, the car keeps **the toy's own steering motor and gearbox**. The toy
+motor has no position sensor, so we add:
+- a motor driver, so the Arduino can turn it both ways;
+- a potentiometer on the steering shaft, so the Arduino knows the wheel angle;
+- a limit switch at each lock, so the motor never strains against the end stops.
 
-One part does motor, gearbox, position sensor and control. It is the fastest way to working
-steering, and the Arduino simply sends an angle.
+The firmware (`firmware/navya_drive`, v2) already runs this. Wiring is in the README, under
+*Wiring → Steering*. Calibration uses `steering_calibrate.py`.
 
-> **Ordered (2026-10-31):** the steering-effort test showed the wheels need a firm push, so the
-> 60 kg·cm servo + UBEC below was replaced by the **Pro-Range BL51180-24V brushless, 180 kg·cm**,
-> which runs straight from the 6S LiPo (19.2-25.2 V) with a 10 A fuse. Two keyed battery isolator
-> switches (one per LiPo) were added. Exact order: `docs/navya_bill_robu.xlsx`.
+## Order now (Robu.in, ₹2,302 incl. GST, prices of 31 Oct 2026)
 
-| Qty | Part | Spec to look for | Approx. price (INR) | Why |
-|---|---|---|---|---|
-| 1 | **Digital servo, 60 kg·cm** (e.g. DS5160 / similar) | metal gears, 180° or 270°, 6-8.4 V, steel output shaft, ≥ 50 kg·cm at 7.4 V | 2,000-3,500 | turns the front axle; ~2-3x the torque we estimate is needed |
-| 1 | Servo arm (horn), aluminium, 25T | matches the servo spline (usually 25T) | 150-300 | connects the servo to the linkage |
-| 1 | **UBEC / buck converter, 10 A** | input up to 30 V (6S LiPo is 25.2 V full), output set to 7.4 V | 600-1,200 | powers the servo from a LiPo; the Arduino's 5 V cannot |
-| 1 | Ball-link rod / turnbuckle set, M3 or M4 | 2 ball links + threaded rod, about 10 cm | 150-300 | servo arm → steering linkage |
-| 1 | Mounting bracket | aluminium servo bracket, or 3D-printed | 200-500 | holds the servo firmly to the chassis |
+| Qty | Part | Robu SKU | Why |
+|---|---|---|---|
+| 1 | SmartElex BTS7960 motor driver (43 A, 6-27 V) | R189064 | drives the toy steering motor left/right from D5/D6 |
+| 2 | 10 kΩ potentiometer, 15 mm shaft | 607345 | steering angle sensor (one spare) |
+| 2 | KW4 roller-lever micro switch | R132437 | full-left / full-right limit switches |
+| 1 | Inline blade fuse holders (5 pcs) | 699636 | fuse in the 12 V lead to the BTS7960 |
+| 4 | 10 A blade fuse | R182177 | for those holders, plus spares |
+| 2 m | 18 AWG silicone wire, red | R164399 | power wiring |
+| 2 m | 18 AWG silicone wire, black | R164398 | power wiring |
 
-## Route B: keep the toy motor, add a driver and an angle sensor
+Power for the steering motor comes from the car's **existing 12 V battery**, so there is
+nothing to buy for it.
 
-Cheaper if the toy motor is strong enough, but more work: the sensor must be mounted on the
-steering shaft, and the Arduino runs the position-control loop.
+**Also worth adding:** 2 × 47 kΩ and 2 × 10 kΩ resistors (a few rupees, any shop) for the
+battery monitor on A4/A5 (README, *Battery monitor*).
 
-| Qty | Part | Spec | Approx. price (INR) | Why |
-|---|---|---|---|---|
-| 1 | **BTS7960 motor driver** (43 A H-bridge) | 6-27 V, 2 PWM inputs | 350-550 | drives the steering motor both ways |
-| 1 | **AS5600 magnetic angle sensor** + diametric magnet (6 × 2.5 mm) | I2C, 12-bit | 150-300 | contactless angle of the steering shaft; does not wear |
-| or 1 | 10 kΩ linear rotary potentiometer + coupler | single-turn, metal shaft | 50-150 | cheaper sensor alternative; wears over time |
-| 1 | 12 V supply | the car's existing 12 V lead-acid battery, or a 24→12 V 5 A buck | 0-600 | steering motor power |
+## Not buying now
 
-## Both routes
+These were considered and are kept in `navya_bill_robu.xlsx` for reference.
 
-| Qty | Part | Why |
-|---|---|---|
-| 2 | Micro limit switches (KW11 lever) | hard stop signal at full left / full right, so the motor can't strain against the end stops |
-| 1 | Inline blade fuse holder + 5 A fuse | protects the steering wiring |
-| 2 | XT60 pigtails (male + female) | clean tap off the LiPo for the servo/steering power |
-| 1 m | 18 AWG silicone wire (red + black) | power wiring |
-| 1 set | Dupont jumpers, heat-shrink, zip ties, M3 screws/nuts | assembly |
+| Item | Why not now |
+|---|---|
+| 180 kg·cm servo (BL51180-24V), servo arm, ball joints, link rod | professor: keep the toy steering |
+| Emergency-stop button, relay and socket | the transmitter's stick-back stop is the emergency stop for now |
+| Two battery isolator switches | the batteries are unplugged at the controller instead |
+| XT60 pigtails | the steering runs from the 12 V battery, not a LiPo tap |
+| 256 GB microSD card | the existing 128 GB card is used for trip recordings |
 
-## Strongly recommended at the same time: hardware emergency stop
+## Before fitting
 
-| Qty | Part | Why |
-|---|---|---|
-| 1 | 22 mm mushroom emergency-stop switch (latching, NC contact) | one big red button that anyone can hit |
-| 1 | Relay or contactor rated ≥ 40 A at 24 V DC (coil 12 V or 24 V) | the e-stop opens it, cutting both motor controllers' power |
-
-Wire the e-stop in series with the relay coil, or simpler, with both controllers' power-lock wires.
-Then motor power is cut regardless of what the laptop or Arduino is doing.
-
-## Things to check before ordering
-
-1. **Steering effort.** Remove the zip tie, unplug the toy steering motor, and with the car on
-   the ground turn the front wheels by pushing the steering linkage by hand.
-   - Easy, with fingers only: Route A's 60 kg·cm servo has plenty of margin.
-   - Needs a firm push: still Route A, but pick a 70-80 kg·cm servo.
-2. **Route A needs the toy gearbox disconnected** from the linkage, otherwise the servo fights it.
-3. **Space.** Measure where a servo (about 65 × 30 × 50 mm) can sit near the steering linkage
-   under the front bonnet. Send a photo and the measurements.
-
-## Firmware note (handled when steering is added)
-
-The Arduino Servo library uses Timer1, which also drives PWM on **D9/D10**, our current throttle
-pins. With a servo, the wiring changes to:
-
-| Signal | Now | With steering |
-|---|---|---|
-| Left / right throttle | D9 / D10 | **D5 / D6** |
-| Left / right brake | D5 / D6 | **D11 / D12** |
-| Steering servo signal | - | **D9** |
-| Receiver CH1 (manual steering) | - | **D4** |
-
-Prices are rough estimates. **For the actual Robu.in order (products, SKUs, live prices and stock) see `docs/navya_bill_robu.xlsx`.**
+1. **Disconnect the toy's control board** from the steering motor. The motor's two wires go to
+   the BTS7960 M+ / M−.
+2. **Mount the potentiometer** so its shaft turns with the steering. Set it roughly mid-way with
+   the wheels straight, so neither lock reaches the pot's own end.
+3. **Mount the limit switches** so the linkage presses each one just before the hard stop.
+4. Then follow the README: upload firmware v2, move the brake wires to D11/D12, wire the
+   steering, and run `python steering_calibrate.py`.

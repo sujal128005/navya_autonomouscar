@@ -108,14 +108,17 @@ def check_arduino():
         if steer:
             report(steer[0], steer[1])
 
-        from battery import describe
+        from battery import describe, plausible
         volts = [("left", s.battery_left_v), ("right", s.battery_right_v)]
         if all(v == 0 for _, v in volts):
             report(INFO, "Battery monitor not wired", "47k/10k dividers to A4/A5 (see README)")
         for side, v in volts:
             if v == 0:
                 continue
-            if v < config.BATTERY_STOP_V:
+            if not plausible(v):
+                report(WARN, f"{side} battery reads {v:.1f} V", "divider wiring wrong or LiPo unplugged; "
+                                                                "the low-battery stop ignores this reading")
+            elif v < config.BATTERY_STOP_V:
                 report(FAIL, f"{side} LiPo {describe(v)}", "charge it - the car would stop almost at once")
             elif v < config.BATTERY_WARN_V:
                 report(WARN, f"{side} LiPo {describe(v)}", "getting low; charge soon")

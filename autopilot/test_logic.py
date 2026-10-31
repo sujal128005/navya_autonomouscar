@@ -330,6 +330,16 @@ def test_battery_guard():
     assert describe(25.2) == "25.2 V (100%)" and describe(0) == "-"
 
 
+
+def test_battery_guard_ignores_unwired_pin():
+    from battery import BatteryGuard, describe
+    g = BatteryGuard()
+    for t in range(10):                                  # a floating pin reading 8 V must not stop the car
+        assert g.update(8.4, 0.0, True, float(t)) == "", t
+    assert "check divider" in describe(8.4) and describe(0.0) == "-"
+    assert g.update(8.4, 21.0, True, 20.0) == "LOW"      # the real battery still counts...
+    assert g.update(8.4, 21.0, True, 24.0) == "STOP"     # ...and stops the car when low
+
 def test_live_settings(tmp_dir=None):
     import tempfile
     from pathlib import Path

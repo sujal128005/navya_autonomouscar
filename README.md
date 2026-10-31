@@ -176,8 +176,8 @@ All tunable numbers live in `autopilot/config.py`.
 2. **Signal-loss check.** Turn the transmitter off. The mode must change to `NO_RC`
    within a moment.
    - If it stays `MANUAL`/`AUTO`, the receiver is repeating its last signal. In that
-     case the transmitter is **not** a dead-man switch, and the kill switch above is
-     a must.
+     case the transmitter is **not** a dead-man switch: fit the kill switch from
+     *Recommended additions* (Wiring) before any ground run.
 3. **Manual drive.** CH5 in MANUAL, push the right stick up gently: both wheels must
    turn forward. Pull it back: brake.
 4. **Find the throttle range.** CH5 in AUTO:
@@ -202,11 +202,11 @@ All tunable numbers live in `autopilot/config.py`.
    - Walk in front of the car. The white overlay marks what counts as an obstacle,
      and the floor must **not** be white.
    - Watch the state go `CLEAR → SLOWING → STOPPED` as you get closer, and back to
-     `RESUMING → CLEAR` 1.5 s after you step away.
-7. **First ground run.** Set `CRUISE_SPEED = 200` in `config.py`.
+     `RESUMING → CLEAR` 0.5 s after you step away.
+7. **First ground run.** Keep `CRUISE_SPEED` low in `config.py` (130 is our tested value).
    1. Place a cardboard box about 5 m ahead.
    2. CH5 to MANUAL, then run `python navya_autopilot.py --show`.
-   3. Flip CH5 to AUTO. The car moves off after 1.5 s.
+   3. Flip CH5 to AUTO. The car moves off after 0.5 s.
    4. Measure where it actually stops. Raise `STOP_DIST_M` if it stops too close,
       then raise speed step by step.
 
@@ -220,13 +220,15 @@ right-click > Send to > Desktop). It opens a menu:
  2  Drive          (watch on phone)
  3  Drive + object detection + record trip
  4  Drive + lane following (steering)
- 5  Drive with everything (detection, steering, LiDAR, record)
+ 5  Drive with everything (detection, steering, record)
+ L  Drive + LiDAR  (LiDAR plugged into the laptop)
  6  Camera test    (no Arduino, car never moves)
  7  Corridor viewer   8  Object detection viewer   9  LiDAR radar view
  C  Calibrate camera  S  Calibrate steering  R  Report of the last trip  T  Run the logic tests
 ```
 
-Every drive option runs the pre-flight check first. If anything fails, it asks before
+Option **L** drives with the LiDAR as a second obstacle sensor (plug it in first). Every
+drive option runs the pre-flight check first. If anything fails, it asks before
 driving. When the program ends, press a key to get back to the menu.
 
 ## Pre-flight check (run this first, every time)
@@ -247,14 +249,14 @@ It never moves the car. `READY` at the end means go.
 
 ## Demo-day checklist
 
-1. LiPos charged (above 24 V) and the kill switch in reach.
+1. LiPos charged (above 24 V).
 2. Transmitter on, **SWA down** (SWA up is dual rate and shortens the stick travel),
    CH5 in **MANUAL**, right stick centred.
 3. Laptop: `python navya_autopilot.py --show`, and wait for `Running`.
 4. A person holds the transmitter for the whole run, ready to pull the stick back.
 5. Flip CH5 to **AUTO**. The car drives off.
 6. Step in front of it (or slide a box in): it slows and stops. Step away: after
-   1.5 s it moves off again.
+   0.5 s it moves off again.
 7. End the run with CH5 back to MANUAL. On the laptop, SPACE pauses and Q quits.
 
 ## Trip recorder
@@ -272,7 +274,8 @@ Each run gets its own folder, `trip_YYYYMMDD_HHMMSS`, under `navya_trips` on the
 |---|---|
 | `camera.mp4` | camera picture with status text and detection boxes, real-time speed |
 | `depth.mp4` | depth view, with the obstacle zone in white |
-| `telemetry.csv` | 10 rows/s: mode, state, obstacle distance, speeds, brake, PWM, RC sticks, vision reason, objects (opens in Excel) |
+| `lidar.mp4` | only with `--lidar`: the radar view |
+| `telemetry.csv` | 10 rows/s: mode, state, obstacle distance, speeds, brake, PWM, RC sticks, vision reason, objects, steering, battery volts, LiDAR distance (opens in Excel) |
 | `report.png` | made by `trip_report.py` (below) |
 | `raw.bag` | only with `--record-raw`: the full camera data for `--replay` |
 
@@ -436,7 +439,8 @@ around the car, in one flat slice at its own height.
 3. **Point it forward.** Put a box about 1 m straight ahead with nothing else near the car.
    Copy the "nearest ... at sensor angle" number into `LIDAR_ANGLE_OFFSET_DEG`. Restart,
    and check the box now shows straight ahead. If left and right are swapped, set
-   `LIDAR_CLOCKWISE = False`.
+   `LIDAR_CLOCKWISE = False`. If the nearest point is part of the car itself (a mast,
+   the roll bar), raise `LIDAR_IGNORE_WITHIN_M` until it disappears from the radar.
 4. **Drive with it:**
    ```bash
    python navya_autopilot.py --phone --lidar
@@ -514,30 +518,50 @@ Run `calibrate_camera.py --write` first. The floor map relies on the camera heig
   field 1? Is the stick pulled back? Is `PWM_START` high enough?
 - **Wheels won't start after power-on**: the controller saw throttle at power-on.
   Power-cycle the controllers with the Arduino already running.
+- **Upload fails with "cannot set com-state" (CH340 clone Uno)**: Windows installed the newer
+  CH340 driver. In Device Manager roll it back to version **3.5.2019.1**.
+- **Upload fails with "not in sync" / Python says "Access is denied" on the port**: something
+  else has the port open. Close the Serial Monitor (and any other Navya program), then retry.
+- **Steering state `STALL`**: the motor was driven for 1.5 s without the pot moving. It retries
+  after 2 s. If it keeps happening, something blocks the wheels or the pot coupling slips.
+- **Phone page doesn't load**: hotspot on? Phone joined to it? Allow Python through the
+  Windows firewall when asked.
 
 ## Repository layout
 
 ```
-firmware/navya_drive/navya_drive.ino   Arduino Uno: RC + laptop -> throttle, brake, steering, safety
-autopilot/steering_calibrate.py        teaches the Arduino full left / straight / full right
-autopilot/preflight.py                 checks everything before a run
-autopilot/battery.py                   LiPo low-voltage warning and stop
-autopilot/live_settings.py             phone sliders: live changes, saved to config.py
-autopilot/ask_navya.py                 "Ask Navya": free vision AI (Gemini, Groq fallback) describes the camera picture
-autopilot/lane_follow.py               pure-pursuit steering towards the lane centre
+Navya.bat                              one-click menu: pre-flight, drive modes, viewers, calibration
+firmware/navya_drive/navya_drive.ino   Arduino Uno: RC + laptop -> throttle, brake, steering, battery, safety
 autopilot/config.py                    every tunable number
-autopilot/navya_autopilot.py           the demo program
+autopilot/navya_autopilot.py           the driving program (--phone --vision --steer --lidar --record ...)
+autopilot/preflight.py                 checks everything before a run
+autopilot/navya_link.py                serial link to the Arduino
 autopilot/obstacle.py                  depth frame -> nearest obstacle in the car's path
 autopilot/speed_planner.py             distance -> speed (cruise / slow / stop / resume)
-autopilot/navya_link.py                serial link to the Arduino
-autopilot/calibrate_camera.py          measures camera height and tilt from the floor
-autopilot/throttle_test.py             bench test and PWM calibration
+autopilot/battery.py                   LiPo low-voltage warning and stop
+autopilot/lane.py                      lane from the walls (depth) or black floor strips (colour)
+autopilot/lane_follow.py               pure-pursuit steering towards the lane centre
+autopilot/steering_calibrate.py        teaches the Arduino full left / straight / full right
+autopilot/vision.py                    YOLO11n object detection + distance per object
+autopilot/vision_rules.py              people and stop-sign rules; detection thread
+autopilot/vision_view.py               object detection viewer (never drives)
+autopilot/export_models.py             makes the fast OpenVINO / ONNX copies of the model
 autopilot/lidar.py                     LiDAR packets -> 360° scans; nearest thing in the path
 autopilot/lidar_view.py                LiDAR radar view (window / phone)
-autopilot/test_logic.py                offline tests with simulated depth images
-Navya.bat                              one-click menu for everything above
+autopilot/corridor_view.py             lane, bird's-eye map and 3D map viewer (never drives)
+autopilot/phone_stream.py              phone page: live views, status, buttons, sliders
+autopilot/live_settings.py             phone sliders: live changes, saved to config.py
+autopilot/ask_navya.py                 "Ask Navya": free vision AI (Gemini, Groq fallback)
+autopilot/keys.env.example             template for the free AI keys (copy to keys.env)
+autopilot/trip_recorder.py             saves videos + telemetry of a drive (SD card if inserted)
+autopilot/trip_report.py               chart and summary of a recorded trip
+autopilot/calibrate_camera.py          measures camera height and tilt from the floor
+autopilot/throttle_test.py             bench test and PWM calibration
+autopilot/test_logic.py                offline tests (no hardware needed)
 .github/workflows/ci.yml               GitHub runs the tests and compiles the firmware on every push
 docs/PROJECT_REPORT.md                 project report: goal, design, status, plan
+docs/steering_parts.md                 steering parts and why they were chosen
+docs/navya_bill_robu.xlsx              the Robu.in bill (what to order now vs later)
 ```
 
 ## Next steps (after Demo 1)
@@ -545,5 +569,5 @@ docs/PROJECT_REPORT.md                 project report: goal, design, status, pla
 - LiDAR: reader, radar view and `--lidar` done; mount, align and test on the car. Mapping later.
 - The Uno's pins are all used. Wheel-speed sensors or more inputs need an Arduino Mega.
 - Steering: done in software (toy motor + BTS7960 + potentiometer); test once parts arrive.
-- Wheel speed feedback (hall signals) for closed-loop speed and odometry.
+- Wheel speed feedback (hall signals) for closed-loop speed and odometry (needs the Mega).
 - Move the autopilot onto an onboard computer (ROS 2).

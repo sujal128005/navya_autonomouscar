@@ -173,7 +173,9 @@ def looks_like_lidar(port: str, seconds: float = 0.6) -> bool:
 
 def find_lidar_port(skip=()) -> str | None:
     """The serial port that streams LiDAR packets, or None. skip: ports already in use."""
-    ports = [p for p in list_ports.comports() if p.vid not in GENUINE_ARDUINO_VIDS and p.device not in skip]
+    # USB ports only: opening a Bluetooth COM port can hang for many seconds.
+    ports = [p for p in list_ports.comports()
+             if p.vid is not None and p.vid not in GENUINE_ARDUINO_VIDS and p.device not in skip]
     ports.sort(key=lambda p: p.vid != CP210X_VID)
     for p in ports:
         if looks_like_lidar(p.device):

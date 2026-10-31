@@ -142,7 +142,7 @@ Safety is layered, so that no single failure lets the car run on.
 | Trip recorder (`--record`) | Camera, depth and LiDAR videos plus a telemetry CSV, saved to the SD card. `trip_report.py` summarises a trip. |
 | Ask Navya | Ask a question about the camera picture from the phone. Uses free AI services (Gemini, with Groq as fallback). For display only: it never drives the car. |
 | Calibration | `calibrate_camera.py` measures the camera height and tilt from the floor. `steering_calibrate.py` teaches the Arduino full left, straight and full right. |
-| `test_logic.py` | 26 offline tests: obstacle maths on simulated depth images, speed planner, lane finder, steering, object rules, LiDAR packet decoding, battery guard, phone endpoints, AI fallback |
+| `test_logic.py` | 27 offline tests: obstacle maths on simulated depth images, speed planner, lane finder, steering, object rules, LiDAR packet decoding, battery guard, phone endpoints, AI fallback |
 | GitHub Actions | Runs the tests and compiles the Arduino firmware on every push |
 
 Every tunable number lives in one file, `autopilot/config.py`, with a comment saying

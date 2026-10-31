@@ -2,6 +2,7 @@ numpy
 pyserial
 opencv-python
 pyrealsense2
+matplotlib      # trip_report.py charts
 # optional: --vision (fast: + openvino), Ask Navya
 ultralytics
 openvino

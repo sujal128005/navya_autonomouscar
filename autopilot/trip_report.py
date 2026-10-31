@@ -19,7 +19,8 @@ import config
 from trip_recorder import LOCAL_DIR, removable_drives
 
 STATE_COLORS = {"CLEAR": "#c8e6c9", "SLOWING": "#fff59d", "STOPPED": "#ffcdd2", "RESUMING": "#ffe0b2",
-                "STOP_SIGN": "#e1bee7", "PAUSED": "#cfd8dc", "IDLE": "#eeeeee"}
+                "STOP_SIGN": "#e1bee7", "PAUSED": "#cfd8dc", "IDLE": "#eeeeee",
+                "BATTERY": "#b0bec5", "LIDAR_LOST": "#f8bbd0"}
 
 
 def newest_trip() -> Path | None:
@@ -58,7 +59,7 @@ def summarise(rows) -> list[str]:
     lines = [f"Duration {duration:.0f} s, driving itself for {auto:.0f} s",
              f"Obstacle stops: {stops}, stop-sign stops: {sign_stops}",
              f"Closest obstacle seen: {min(seen):.2f} m" if seen else "No obstacles seen"]
-    lines += [f"  {s:9} {dt:6.1f} s" for s, dt in sorted(state_time.items(), key=lambda kv: -kv[1])]
+    lines += [f"  {s:10} {dt:6.1f} s" for s, dt in sorted(state_time.items(), key=lambda kv: -kv[1])]
     return lines
 
 

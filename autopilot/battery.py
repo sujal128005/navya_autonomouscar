@@ -9,11 +9,18 @@ little at rest, which must not make the car drive off again).
 import config
 
 CELLS = 6
+PLAUSIBLE_MIN_V = 15.0      # lower readings (2.5 V/cell) are a wiring fault, not a real LiPo
+
+
+def plausible(volts: float) -> bool:
+    return volts >= PLAUSIBLE_MIN_V
 
 
 def describe(volts: float) -> str:
     if volts <= 0:
         return "-"
+    if not plausible(volts):
+        return f"{volts:.1f} V (check divider)"
     per_cell = volts / CELLS
     percent = max(0, min(100, round((per_cell - 3.5) / (4.2 - 3.5) * 100)))
     return f"{volts:.1f} V ({percent}%)"
@@ -26,7 +33,7 @@ class BatteryGuard:
 
     def update(self, left_v: float, right_v: float, driving: bool, now_s: float) -> str:
         """Returns '' (fine), 'LOW' (warn) or 'STOP' (hold the car stopped)."""
-        readings = [v for v in (left_v, right_v) if v > 0]
+        readings = [v for v in (left_v, right_v) if plausible(v)]   # 0 = not wired
         if self.tripped:
             return "STOP"
         if not readings:

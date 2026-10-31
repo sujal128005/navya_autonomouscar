@@ -283,7 +283,16 @@ int16_t potToPos(uint16_t raw) {
 }
 
 // Battery voltage in millivolts (0 when nothing is connected to the pin).
+// An unconnected pin floats and can read any voltage, so first test it with the
+// internal pull-up: the divider's 10k to GND drags the pin well down, a bare pin
+// reads near 5 V.
 uint16_t batteryMv(uint8_t pin) {
+  pinMode(pin, INPUT_PULLUP);
+  analogRead(pin);                       // settle the ADC on this pin
+  bool unconnected = analogRead(pin) > 1000;
+  pinMode(pin, INPUT);
+  if (unconnected) return 0;
+  analogRead(pin);
   uint16_t sum = 0;
   for (uint8_t i = 0; i < 4; i++) sum += analogRead(pin);
   float volts = sum / 4.0 * BATT_ADC_REF_V / 1023.0 * BATT_DIVIDER;
@@ -297,6 +306,9 @@ void steerOff() {
   analogWrite(PIN_STEER_RPWM, 0);
   analogWrite(PIN_STEER_LPWM, 0);
   digitalWrite(PIN_STEER_ENABLE, LOW);
+  // The stall timer only runs while the motor is driven.
+  stallRefPot = potRaw;
+  stallRefMs = millis();
 }
 
 // Drive the motor; pwm > 0 means RPWM. Stops (and holds off for a while) if the
@@ -305,8 +317,6 @@ void steerOff() {
 void steerMotorRaw(int16_t pwm, uint32_t nowMs) {
   if (pwm == 0) {
     steerOff();
-    stallRefPot = potRaw;
-    stallRefMs = nowMs;
     return;
   }
   if (abs((int16_t)potRaw - (int16_t)stallRefPot) > 5) {
