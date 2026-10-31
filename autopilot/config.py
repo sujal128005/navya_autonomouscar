@@ -64,6 +64,18 @@ STEER_RATE_PER_S = 1500         # steering command may change at most this much 
 LANE_LOST_HOLD_S = 0.5          # lane missing for less than this: keep the last steering
 LANE_LOST_SPEED = 80            # lane missing for longer: steer straight and creep at this speed
 
+# --- LiDAR (LDROBOT D500 kit on the laptop's USB; python lidar_view.py / --lidar) ---
+LIDAR_PORT = None               # e.g. "COM7"; None = find it automatically
+LIDAR_BAUD = 230400
+LIDAR_ANGLE_OFFSET_DEG = 0.0    # sensor angle that points straight ahead (lidar_view.py shows it)
+LIDAR_CLOCKWISE = True          # sensor angles grow clockwise seen from above (STL-19P/LD19: yes)
+LIDAR_SETBACK_M = 0.0           # LiDAR behind the front bumper; subtracted from distances
+LIDAR_LATERAL_OFFSET_M = 0.0    # positive = LiDAR right of the car's centre line
+LIDAR_IGNORE_WITHIN_M = 0.15    # ignore returns this close (the car's own mast, cables)
+LIDAR_MIN_INTENSITY = 10        # weaker returns are noise (0..255)
+LIDAR_MIN_POINTS = 3            # points needed in the corridor to count as an obstacle
+LIDAR_MAX_AGE_S = 0.5           # with --lidar: no new scan for this long = stop, as for lost depth
+
 # --- Ask Navya (phone button; display only) ---
 ASK_PROVIDERS = ["gemini", "groq"]     # tried in this order; the next one answers if one fails
 GEMINI_MODEL = "gemini-3.5-flash-lite" # free tier, accepts images

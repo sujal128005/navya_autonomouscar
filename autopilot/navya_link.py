@@ -36,6 +36,8 @@ class DriveStatus:
 
 def find_port() -> str:
     ports = [p for p in list_ports.comports() if p.vid in ARDUINO_VIDS]
+    if len(ports) > 1:  # the LiDAR's USB adapter is a CP210x too; the Uno is not
+        ports = [p for p in ports if p.vid != 0x10C4 and p.device != config.LIDAR_PORT] or ports
     if len(ports) == 1:
         return ports[0].device
     listing = ", ".join(f"{p.device} ({p.description})" for p in list_ports.comports()) or "none"

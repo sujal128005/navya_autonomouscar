@@ -2,7 +2,7 @@
 
     python preflight.py
 
-Checks the laptop, Arduino, transmitter, steering, batteries, camera, storage,
+Checks the laptop, Arduino, transmitter, steering, batteries, camera, LiDAR, storage,
 object detection and phone link, and says how to fix anything that is wrong.
 It never moves the car. Exit code 1 if anything FAILED.
 """
@@ -29,15 +29,14 @@ def report(status: str, what: str, detail: str = ""):
 
 def check_packages():
     for name, needed in (("numpy", True), ("cv2", True), ("pyrealsense2", True), ("serial", True),
-                         ("ultralytics", False), ("openvino", False), ("anthropic", False)):
+                         ("ultralytics", False), ("openvino", False)):
         try:
             importlib.import_module(name)
         except ImportError:
             if needed:
                 report(FAIL, f"Python package {name}", "pip install -r requirements.txt")
             else:
-                use = {"ultralytics": "--vision", "openvino": "fast --vision",
-                       "anthropic": "Ask Navya"}[name]
+                use = {"ultralytics": "--vision", "openvino": "fast --vision"}[name]
                 report(INFO, f"Python package {name} not installed", f"only needed for {use}")
     if not any(r[1].startswith("Python package") and r[0] == FAIL for r in results):
         report(OK, "Python packages")
@@ -185,6 +184,24 @@ def check_camera():
         report(OK, f"Camera calibration matches ({height:.2f} m, {pitch:.1f} deg)")
 
 
+def check_lidar():
+    from lidar import LidarReader, find_lidar_port
+    port = config.LIDAR_PORT or find_lidar_port()
+    if not port:
+        report(INFO, "LiDAR not connected", "only needed for --lidar and lidar_view.py")
+        return
+    reader = LidarReader(port)
+    try:
+        if not reader.wait_first(3):
+            report(FAIL, f"LiDAR on {port} sends no full turns", "is it spinning? check its power")
+        else:
+            points = int(reader.latest().valid().sum())
+            report(OK if points > 100 else WARN, f"LiDAR on {port}, {reader.rpm / 60:.1f} turns/s, {points} points",
+                   "" if points > 100 else "few returns - lens dirty or covered?")
+    finally:
+        reader.close()
+
+
 def check_storage():
     from trip_recorder import removable_drives
     drives = removable_drives()
@@ -241,7 +258,7 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print("Navya pre-flight check\n")
-    for check in (check_packages, check_programs, check_arduino, check_camera,
+    for check in (check_packages, check_programs, check_arduino, check_camera, check_lidar,
                   check_storage, check_detection, check_phone):
         try:
             check()

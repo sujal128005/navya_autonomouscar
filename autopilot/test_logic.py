@@ -443,6 +443,75 @@ def test_ask_navya_providers_and_fallback():
         os.environ.update(saved_env)
 
 
+
+def lidar_packet(start_deg, end_deg, dists_mm, intensity=200, speed_dps=3600):
+    """One 47-byte LiDAR packet as the D500 sends it, CRC included."""
+    import struct
+    from lidar import crc8
+    body = struct.pack("<BBHH", 0x54, 0x2C, speed_dps, round(start_deg * 100) % 36000)
+    for d in dists_mm:
+        body += struct.pack("<HB", d, intensity)
+    body += struct.pack("<HH", round(end_deg * 100) % 36000, 1234)
+    return body + bytes([crc8(body)])
+
+
+def test_lidar_parser_builds_full_turns():
+    from lidar import LidarParser
+    turn = b"".join(lidar_packet(12 * k, 12 * k + 11, [1000 + k] * 12) for k in range(30))
+    corrupt = bytearray(lidar_packet(5, 16, [500] * 12))
+    corrupt[10] ^= 0xFF
+    stream = b"\x00\x54junk" + turn[:47 * 4] + bytes(corrupt) + turn[47 * 4:] + lidar_packet(0, 11, [1500] * 12)
+    parser, scans = LidarParser(), []
+    for i in range(0, len(stream), 37):          # arrives in odd-sized chunks
+        scans += parser.feed(stream[i:i + 37], now=1.0)
+    assert parser.bad_packets >= 1 and parser.good_packets == 31, (parser.good_packets, parser.bad_packets)
+    assert len(scans) == 1, len(scans)
+    scan = scans[0]
+    assert len(scan.angle_deg) == 360 and abs(scan.rpm - 600) < 1e-6
+    assert abs(scan.angle_deg[13] - 13) < 1e-6 and abs(scan.distance_m[13] - 1.001) < 1e-9
+    assert not np.any(np.isclose(scan.distance_m, 0.5))   # the corrupt packet's points are dropped
+
+
+def test_lidar_corridor_and_sides():
+    from lidar import Scan, corridor_distance, nearest_by_side
+    angles = np.arange(0, 360, 0.5)
+    dists = np.full(angles.shape, 6.0)                       # room walls 6 m away
+    ahead = (angles < 8) | (angles > 352)
+    dists[ahead] = 1.5                                       # box straight ahead
+    dists[(angles > 88) & (angles < 92)] = 0.5               # post close on the right
+    dists[(angles > 200) & (angles < 202)] = 0.05            # the car's own mast: ignored
+    scan = Scan(angles, dists, np.full(angles.shape, 200), 600, 0.0)
+    saved = (config.LIDAR_ANGLE_OFFSET_DEG, config.LIDAR_SETBACK_M, config.LIDAR_CLOCKWISE)
+    try:
+        config.LIDAR_ANGLE_OFFSET_DEG, config.LIDAR_SETBACK_M, config.LIDAR_CLOCKWISE = 0.0, 0.3, True
+        d = corridor_distance(scan)
+        assert d is not None and abs(d - 1.2) < 0.02, d      # 1.5 m minus the 0.3 m setback
+        sides = nearest_by_side(scan)
+        assert abs(sides["right"] - 0.5) < 1e-6 and sides["left"] == 6.0 and sides["back"] == 6.0, sides
+        config.LIDAR_CLOCKWISE = False                       # mirrored: the post is now on the left
+        assert abs(nearest_by_side(scan)["left"] - 0.5) < 1e-6
+        config.LIDAR_ANGLE_OFFSET_DEG = 90.0                 # mounted turned: the post is ahead now
+        config.LIDAR_CLOCKWISE = True
+        assert abs(corridor_distance(scan) - 0.2) < 0.02
+        dists[:] = 6.0
+        dists[0] = 1.0                                       # a single stray point is not an obstacle
+        config.LIDAR_ANGLE_OFFSET_DEG = 0.0
+        assert corridor_distance(scan) is None
+    finally:
+        config.LIDAR_ANGLE_OFFSET_DEG, config.LIDAR_SETBACK_M, config.LIDAR_CLOCKWISE = saved
+
+
+def test_arduino_port_ignores_lidar_adapter():
+    import navya_link
+    from types import SimpleNamespace as P
+    real = navya_link.list_ports.comports
+    try:
+        navya_link.list_ports.comports = lambda: [P(device="COM7", vid=0x10C4, description="CP2102"),
+                                                  P(device="COM6", vid=0x1A86, description="CH340")]
+        assert navya_link.find_port() == "COM6"
+    finally:
+        navya_link.list_ports.comports = real
+
 def test_trim():
     assert apply_trim(400, 0.0) == (400, 400)
     left, right = apply_trim(400, 0.05)

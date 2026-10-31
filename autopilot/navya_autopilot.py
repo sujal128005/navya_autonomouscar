@@ -5,6 +5,7 @@ Run on the laptop riding in the car, with the D435i and the Arduino plugged in:
     python navya_autopilot.py --phone           # drive, and watch it from a phone
     python navya_autopilot.py --phone --vision  # + object detection: people, stop signs
     python navya_autopilot.py --phone --steer   # + lane following (steering calibrated first)
+    python navya_autopilot.py --phone --lidar   # + LiDAR as a second obstacle sensor
     python navya_autopilot.py --dry-run --show  # camera only, no Arduino needed
 
 Keys (terminal or depth window): SPACE = pause/unpause (pause = stop), Q = quit.
@@ -127,6 +128,8 @@ def main():
                         help="run on a recorded raw.bag instead of the camera (never drives the car)")
     parser.add_argument("--steer", action="store_true",
                         help="lane following: steer to the corridor centre (needs calibrated steering)")
+    parser.add_argument("--lidar", action="store_true",
+                        help="also stop for what the LiDAR sees in the path (D500 on the laptop's USB)")
     args = parser.parse_args()
     if args.replay:
         args.dry_run = True
@@ -140,9 +143,31 @@ def main():
             link.close()
             return 1
 
+    lidar = None
+    if args.lidar:
+        from lidar import LidarReader, corridor_distance
+        from lidar_view import render_radar
+        try:
+            lidar = LidarReader(skip=(link.port,) if link else ())
+        except RuntimeError as e:
+            print(e)
+            if link:
+                link.close()
+            return 1
+        print(f"LiDAR on {lidar.port}, waiting for the first turn...")
+        if not lidar.wait_first():
+            print("No scans from the LiDAR. Is it spinning? Check its power and wires.")
+            lidar.close()
+            if link:
+                link.close()
+            return 1
+
     phone = None
     if args.phone:
-        phone = PhoneStream("Navya autopilot", {"camera": "Camera", "depth": "Depth (white = obstacle zone)"},
+        views = {"camera": "Camera", "depth": "Depth (white = obstacle zone)"}
+        if lidar:
+            views["lidar"] = "LiDAR radar (up = forward)"
+        phone = PhoneStream("Navya autopilot", views,
                             {"Pause (hold stopped)": "pause", "Resume": "resume"}, port=args.phone_port,
                             settings=live_settings.SETTINGS, settings_values=live_settings.values,
                             ask=True)
@@ -180,6 +205,7 @@ def main():
     last_state = None
     last_depth_at = time.monotonic()
     phone_color = None
+    radar, radar_t, lidar_lost = None, 0.0, False
     frames_seen = 0
     fps_t0 = time.monotonic()
     fps = 0.0
@@ -218,6 +244,20 @@ def main():
             depth_raw = np.asanyarray(depth_frame.get_data())
             m = detector.measure(depth_raw)
 
+            lidar_dist, lidar_text = None, ""
+            if lidar:
+                scan = lidar.latest()
+                lost = now - scan.t > config.LIDAR_MAX_AGE_S
+                if lost != lidar_lost:
+                    print("LiDAR STOPPED SENDING - car stopped" + (f" ({lidar.error})" if lidar.error else "")
+                          if lost else "LiDAR back")
+                lidar_lost = lost
+                if not lost:
+                    lidar_dist = corridor_distance(scan)
+                lidar_text = "LOST" if lost else ("clear" if lidar_dist is None else f"{lidar_dist:.2f} m")
+                if scan.t != radar_t:
+                    radar, radar_t = render_radar(scan), scan.t
+
             mode = link.status.mode if link else "DRY_RUN"
             if link and link.status_age_s() > 0.5:
                 mode = "NO_LINK"
@@ -231,6 +271,10 @@ def main():
                 distance = m.distance_m
                 if rule and rule.distance_m is not None:
                     distance = rule.distance_m if distance is None else min(distance, rule.distance_m)
+                if lidar_lost:
+                    distance = 0.0      # a sensor we rely on went quiet: stop, as for lost depth
+                elif lidar_dist is not None:
+                    distance = lidar_dist if distance is None else min(distance, lidar_dist)
                 speed, brake = planner.update(distance, now)
             else:
                 planner.reset()
@@ -266,11 +310,14 @@ def main():
             dist = "BLIND" if m.blind else ("clear" if m.distance_m is None else f"{m.distance_m:.2f} m")
             state = "PAUSED" if paused else ("BATTERY" if battery == "STOP" else
                                              "STOP_SIGN" if rule and rule.hold else
+                                             "LIDAR_LOST" if lidar_lost and driving else
                                              (planner.state if driving else "IDLE"))
             batteries = f"{describe(s.battery_left_v)} / {describe(s.battery_right_v)}" if s else "-"
             line = f"{mode:8} {state:9} obstacle {dist:9} speed {left}/{right}" + (" BRAKE" if brake else "")
             if rule and rule.reason:
                 line += f"  [{rule.reason}]"
+            if lidar:
+                line += f"  lidar {lidar_text}"
             if follower:
                 steer_state = link.status.steer_state if link else "-"
                 line += f"  steer {steer:+d} ({steer_state}) {steer_info}"
@@ -284,6 +331,8 @@ def main():
                 lines.append(rule.reason)
             if follower:
                 lines.append(f"steer {steer:+d} {steer_info}")
+            if lidar:
+                lines.append(f"lidar {lidar_text}")
             if battery:
                 lines.append(f"battery {batteries}" + (" - STOPPED" if battery == "STOP" else " - low"))
             key = read_key()
@@ -300,6 +349,8 @@ def main():
                     key = (chr(k).lower() if k != 255 else None) or key
                 if recording:
                     recorder.frame("depth", vis)
+                    if radar is not None:
+                        recorder.frame("lidar", radar)
                     if cam is not None:
                         recorder.frame("camera", cam)
                     recorder.log(mode=mode, state=state,
@@ -313,9 +364,12 @@ def main():
                                  steer_pos=s.steer_pos if s and follower else "",
                                  lane=steer_info,
                                  battery_left_v=f"{s.battery_left_v:.2f}" if s else "",
-                                 battery_right_v=f"{s.battery_right_v:.2f}" if s else "")
+                                 battery_right_v=f"{s.battery_right_v:.2f}" if s else "",
+                                 lidar_m=lidar_text)
                 if phone:
                     phone.publish("depth", vis)
+                    if radar is not None:
+                        phone.publish("lidar", radar)
                     if cam is not None:
                         phone.publish("camera", cam)
                     status = dict(mode=mode, state=state, obstacle=dist, speed=f"{left}/{right}",
@@ -325,6 +379,8 @@ def main():
                                   fps=f"{fps:.0f}")
                     if vision:
                         status.update(objects=summary(detections), vision_fps=f"{vision.fps:.0f}")
+                    if lidar:
+                        status.update(lidar=lidar_text)
                     if follower:
                         status.update(steer=f"{steer:+d} ({link.status.steer_state if link else '-'})",
                                       lane=steer_info or "-")
@@ -351,6 +407,7 @@ def main():
                         if asker:
                             asker.ask(cam if cam is not None else vis, question,
                                       context=f"mode {mode}, state {state}, nearest obstacle in path {dist}"
+                                              + (f", lidar {lidar_text}" if lidar else "")
                                               + (f", objects: {summary(detections)}" if vision else ""))
             if key == " ":
                 paused = not paused
@@ -364,6 +421,8 @@ def main():
             link.close()
         if vision:
             vision.close()
+        if lidar:
+            lidar.close()
         pipeline.stop()
         if recorder:
             recorder.close()

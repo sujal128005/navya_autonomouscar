@@ -1,5 +1,7 @@
 # Navya
 
+[![checks](https://github.com/sujal128005/navya_autonomouscar/actions/workflows/ci.yml/badge.svg)](https://github.com/sujal128005/navya_autonomouscar/actions/workflows/ci.yml)
+
 Autonomous car built on a TZ-306 4x4 ride-on, on a student budget.
 
 **Demo 1 (current):** drive along a straight path, see an obstacle with the
@@ -46,7 +48,8 @@ The Arduino is in charge of safety. The car stops if any of these happen:
 | FlySky FS-CT6B transmitter + FS-R6B receiver | manual driving, AUTO switch, stop |
 | Intel RealSense D435i | obstacle depth |
 | Laptop (Windows, Python) | autopilot |
-| Raspberry Pi 3B, LDROBOT D500 LiDAR | not used in Demo 1 |
+| LDROBOT D500 LiDAR (STL-19P), on the laptop's USB | optional second obstacle sensor (`--lidar`) |
+| Raspberry Pi 3B | not used yet |
 
 ## Wiring
 
@@ -138,9 +141,10 @@ Recommended additions, all cheap:
 
 1. Open `firmware/navya_drive/navya_drive.ino` in the Arduino IDE.
 2. Choose board **Arduino Uno** and the right port, then click Upload.
-3. Open the Serial Monitor at **115200** baud. You should see `NAVYA READY v1`, then
-   `S,...` status lines 10 times a second:
-   `S,<mode>,<CH2 µs>,<CH5 µs>,<laptop ok>,<pwm left>,<pwm right>,<brake>`
+3. Open the Serial Monitor at **115200** baud. You should see `NAVYA READY v2`, then
+   `S,...` status lines 10 times a second, starting
+   `S,<mode>,<CH2 µs>,<CH5 µs>,<laptop ok>,<pwm left>,<pwm right>,<brake>,...`
+   (the comment at the top of the firmware lists all 17 fields).
 
 ### 2. Laptop
 
@@ -153,7 +157,9 @@ python test_logic.py
 ```
 
 `test_logic.py` checks the obstacle maths and speed logic with simulated depth
-images. It needs no hardware.
+images. It needs no hardware. GitHub also runs it, and compiles the Arduino firmware,
+on every push (`.github/workflows/ci.yml`): the badge at the top turns red if
+something broke. Check it is green before taking the car out.
 
 All tunable numbers live in `autopilot/config.py`.
 
@@ -204,6 +210,25 @@ All tunable numbers live in `autopilot/config.py`.
    4. Measure where it actually stops. Raise `STOP_DIST_M` if it stops too close,
       then raise speed step by step.
 
+## One-click launcher
+
+Double-click **`Navya.bat`** in the repository folder (or make a desktop shortcut to it:
+right-click > Send to > Desktop). It opens a menu:
+
+```
+ 1  Pre-flight check
+ 2  Drive          (watch on phone)
+ 3  Drive + object detection + record trip
+ 4  Drive + lane following (steering)
+ 5  Drive with everything (detection, steering, LiDAR, record)
+ 6  Camera test    (no Arduino, car never moves)
+ 7  Corridor viewer   8  Object detection viewer   9  LiDAR radar view
+ C  Calibrate camera  S  Calibrate steering  R  Report of the last trip  T  Run the logic tests
+```
+
+Every drive option runs the pre-flight check first. If anything fails, it asks before
+driving. When the program ends, press a key to get back to the menu.
+
 ## Pre-flight check (run this first, every time)
 
 ```bash
@@ -215,6 +240,7 @@ It checks, and tells you how to fix anything wrong:
 - Arduino connected with firmware v2, transmitter on, CH5 in MANUAL, stick centred;
 - steering calibrated, and battery voltages;
 - camera on USB 3 and still matching its calibration (warns if it was knocked);
+- LiDAR spinning and sending scans (if plugged in);
 - SD card and free space, object-detection backend, hotspot on, port 8080 free, Ask Navya key.
 
 It never moves the car. `READY` at the end means go.
@@ -391,6 +417,38 @@ python navya_autopilot.py --phone --steer
   - Too lazy in bends → shorter `LOOKAHEAD_M`.
   - Measure `CAMERA_TO_REAR_AXLE_M` on the car.
 
+## LiDAR (second obstacle sensor)
+
+The LDROBOT D500 kit (STL-19P sensor) plugs into the **laptop's USB** through the kit's
+adapter board, so it needs no Arduino pins. It spins ~10 times a second and sees 360°
+around the car, in one flat slice at its own height.
+
+1. **Mount it** on top of the car, level, where nothing on the car blocks its view.
+   Pick a height that catches legs and boxes (a low slice sees more). Measure how far
+   it is behind the front bumper and put that in `LIDAR_SETBACK_M` in `config.py`
+   (and `LIDAR_LATERAL_OFFSET_M` if it is off-centre).
+2. **See what it sees:**
+   ```bash
+   python lidar_view.py            # add --phone to watch it on the phone
+   ```
+   Up is forward, and the grey strip is the car's path. The bottom lines show the
+   nearest thing in the path and on each side.
+3. **Point it forward.** Put a box about 1 m straight ahead with nothing else near the car.
+   Copy the "nearest ... at sensor angle" number into `LIDAR_ANGLE_OFFSET_DEG`. Restart,
+   and check the box now shows straight ahead. If left and right are swapped, set
+   `LIDAR_CLOCKWISE = False`.
+4. **Drive with it:**
+   ```bash
+   python navya_autopilot.py --phone --lidar
+   ```
+   The car slows and stops for whichever is nearer: the depth camera's obstacle or
+   the LiDAR's. The LiDAR only ever makes the car more careful. If it stops sending
+   for 0.5 s, the car stops (`LIDAR_LOST`) and moves on once it is back. The phone
+   gets a radar view, and `--record` saves it as `lidar.mp4`.
+
+The LiDAR sees only its own height. Low things (a shoe, a cable) are still the
+camera's job.
+
 ## Corridor viewer: lane and 3D map
 
 `LANE_SOURCE` in `config.py` decides where the lane comes from:
@@ -474,12 +532,18 @@ autopilot/speed_planner.py             distance -> speed (cruise / slow / stop /
 autopilot/navya_link.py                serial link to the Arduino
 autopilot/calibrate_camera.py          measures camera height and tilt from the floor
 autopilot/throttle_test.py             bench test and PWM calibration
+autopilot/lidar.py                     LiDAR packets -> 360° scans; nearest thing in the path
+autopilot/lidar_view.py                LiDAR radar view (window / phone)
 autopilot/test_logic.py                offline tests with simulated depth images
+Navya.bat                              one-click menu for everything above
+.github/workflows/ci.yml               GitHub runs the tests and compiles the firmware on every push
+docs/PROJECT_REPORT.md                 project report: goal, design, status, plan
 ```
 
 ## Next steps (after Demo 1)
 
-- LDROBOT D500 LiDAR as a second obstacle sensor and for mapping.
+- LiDAR: reader, radar view and `--lidar` done; mount, align and test on the car. Mapping later.
+- The Uno's pins are all used. Wheel-speed sensors or more inputs need an Arduino Mega.
 - Steering: done in software (toy motor + BTS7960 + potentiometer); test once parts arrive.
 - Wheel speed feedback (hall signals) for closed-loop speed and odometry.
 - Move the autopilot onto an onboard computer (ROS 2).
