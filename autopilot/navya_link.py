@@ -134,6 +134,10 @@ class NavyaLink:
         parts = line.split(",")
         if len(parts) not in (8, 15, 17):   # v1: 8 fields; v2 adds steering, then batteries
             return
+        # The USB link occasionally drops a byte ("AUO"); one bad line must not change the mode
+        if parts[1] not in ("NO_RC", "MANUAL", "AUTO") or parts[4] not in ("0", "1") \
+                or parts[7] not in ("0", "1"):
+            return
         try:
             status = DriveStatus(
                 mode=parts[1],
