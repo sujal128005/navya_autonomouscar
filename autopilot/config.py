@@ -15,8 +15,8 @@ DEPTH_FPS = 30
 DEPTH_STRIDE = 2            # use every 2nd pixel each way; plenty for this job
 
 # --- Camera mounting (python calibrate_camera.py --write fills the first two) ---
-CAMERA_HEIGHT_M = 0.565      # lens centre above the floor
-CAMERA_PITCH_DEG = 1.6      # positive = tilted down
+CAMERA_HEIGHT_M = 0.554      # lens centre above the floor
+CAMERA_PITCH_DEG = 4.4      # positive = tilted down
 CAMERA_LATERAL_OFFSET_M = 0.0   # positive = camera right of the car's centre line
 CAMERA_SETBACK_M = 0.0      # lens behind the front bumper; subtracted from distances
 
