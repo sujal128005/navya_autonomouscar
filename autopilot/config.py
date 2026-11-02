@@ -67,10 +67,10 @@ LANE_LOST_SPEED = 80            # lane missing for longer: steer straight and cr
 # --- LiDAR (LDROBOT D500 kit on the laptop's USB; python lidar_view.py / --lidar) ---
 LIDAR_PORT = None               # e.g. "COM7"; None = find it automatically
 LIDAR_BAUD = 230400
-LIDAR_ANGLE_OFFSET_DEG = 0.0    # sensor angle that points straight ahead (lidar_view.py shows it)
-LIDAR_CLOCKWISE = True          # sensor angles grow clockwise seen from above (STL-19P/LD19: yes)
-LIDAR_SETBACK_M = 0.0           # LiDAR behind the front bumper; subtracted from distances
-LIDAR_LATERAL_OFFSET_M = 0.0    # positive = LiDAR right of the car's centre line
+LIDAR_ANGLE_OFFSET_DEG = -1.0   # sensor angle that points straight ahead (measured 2 Nov 2026)
+LIDAR_CLOCKWISE = True          # sensor angles grow clockwise seen from above (checked on the car)
+LIDAR_SETBACK_M = 0.365         # LiDAR behind the front bumper; subtracted from distances
+LIDAR_LATERAL_OFFSET_M = -0.10  # positive = LiDAR right of the car's centre line (here: 10 cm left)
 LIDAR_IGNORE_WITHIN_M = 0.15    # ignore returns this close (the car's own mast, cables)
 LIDAR_MIN_INTENSITY = 10        # weaker returns are noise (0..255)
 LIDAR_MIN_POINTS = 3            # points needed in the corridor to count as an obstacle
