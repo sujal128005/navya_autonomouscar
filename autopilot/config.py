@@ -6,7 +6,7 @@ PWM_START..PWM_MAX throttle range (see firmware/navya_drive/navya_drive.ino).
 
 # --- Arduino link ---
 SERIAL_PORT = None          # e.g. "COM5"; None = auto-detect the Uno
-SERIAL_BAUD = 115200
+SERIAL_BAUD = 250000          # must match Serial.begin() in navya_drive.ino
 
 # --- RealSense depth stream ---
 DEPTH_WIDTH = 640

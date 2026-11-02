@@ -16,7 +16,8 @@
   The car also stops if the laptop goes quiet for HOST_TIMEOUT_MS (steering
   then holds straight).
 
-  Serial protocol, 115200 baud, one command per line:
+  Serial protocol, 250000 baud (exact on a 16 MHz Uno; 115200 is 2% off and a CH340
+  clone then drops bytes), one command per line:
     D,<left>,<right>,<brake>[,<steer>]  speed 0..1000 per wheel, brake 0/1,
                                         steer -1000 (full left)..1000 (full right)
     R,<pwmLeft>,<pwmRight>              raw throttle PWM, for calibration only
@@ -528,7 +529,7 @@ void setup() {
   PCICR |= _BV(PCIE2);         // pin-change interrupts for D0-D7...
   PCMSK2 = _BV(PCINT20);       // ...but only D4 (CH1)
 
-  Serial.begin(115200);
+  Serial.begin(250000);
   Serial.println(F("NAVYA READY v2"));
   printConfig();
   lastRampMs = millis();

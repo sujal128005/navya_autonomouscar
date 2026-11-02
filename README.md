@@ -141,7 +141,7 @@ Recommended additions, all cheap:
 
 1. Open `firmware/navya_drive/navya_drive.ino` in the Arduino IDE.
 2. Choose board **Arduino Uno** and the right port, then click Upload.
-3. Open the Serial Monitor at **115200** baud. You should see `NAVYA READY v2`, then
+3. Open the Serial Monitor at **250000** baud. You should see `NAVYA READY v2`, then
    `S,...` status lines 10 times a second, starting
    `S,<mode>,<CH2 µs>,<CH5 µs>,<laptop ok>,<pwm left>,<pwm right>,<brake>,...`
    (the comment at the top of the firmware lists all 17 fields).
