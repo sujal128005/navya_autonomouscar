@@ -261,8 +261,11 @@ def main():
                 scan = lidar.latest()
                 lost = now - scan.t > config.LIDAR_MAX_AGE_S
                 if lost != lidar_lost:
-                    print("LiDAR STOPPED SENDING - car stopped" + (f" ({lidar.error})" if lidar.error else "")
-                          if lost else "LiDAR back")
+                    p = lidar._parser
+                    detail = (f"last turn {now - scan.t:.2f} s ago, {lidar.scans} turns, "
+                              f"packets {p.good_packets} good / {p.bad_packets} bad")
+                    print(f"LiDAR STOPPED SENDING - car stopped ({lidar.error or detail})"
+                          if lost else f"LiDAR back ({detail})")
                 lidar_lost = lost
                 if not lost:
                     lidar_dist = corridor_distance(scan)
