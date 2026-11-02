@@ -270,11 +270,36 @@ def check_phone():
         report(INFO, "Ask Navya: no free AI key yet", "copy keys.env.example to keys.env and add a key")
 
 
+def check_laptop_power():
+    """The laptop sleeps at critical battery, which cuts the camera, Arduino and LiDAR."""
+    if os.name != "nt":
+        return
+    import ctypes
+
+    class PowerStatus(ctypes.Structure):
+        _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
+                    ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
+                    ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+
+    s = PowerStatus()
+    if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s)) or s.BatteryLifePercent == 255:
+        return
+    pct, plugged = s.BatteryLifePercent, s.ACLineStatus == 1
+    what = f"Laptop battery {pct}%" + (" (charger connected)" if plugged else " (on battery)")
+    if pct < 20:
+        report(FAIL, what, "the laptop sleeps at critical battery and the car loses its camera - "
+                           "charge it first (plug the charger straight into the laptop)")
+    elif pct < 40:
+        report(WARN, what, "charge before long runs; a USB hub's PD pass-through may not keep up")
+    else:
+        report(OK, what)
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print("Navya pre-flight check\n")
-    for check in (check_packages, check_programs, check_arduino, check_camera, check_lidar,
+    for check in (check_packages, check_programs, check_laptop_power, check_arduino, check_camera, check_lidar,
                   check_storage, check_detection, check_phone):
         try:
             check()
