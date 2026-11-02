@@ -52,6 +52,7 @@ class NavyaLink:
         self.last_line = ""
         self.firmware = ""
         self.config: dict[str, str] = {}
+        self.bad_lines = 0      # damaged status lines dropped (bytes lost on the USB link)
         self._ser = serial.Serial(self.port, baud, timeout=0.1)
         self._stop = threading.Event()
         self._ready = threading.Event()
@@ -133,10 +134,12 @@ class NavyaLink:
     def _parse_status(self, line: str):
         parts = line.split(",")
         if len(parts) not in (8, 15, 17):   # v1: 8 fields; v2 adds steering, then batteries
+            self.bad_lines += 1
             return
         # The USB link occasionally drops a byte ("AUO"); one bad line must not change the mode
         if parts[1] not in ("NO_RC", "MANUAL", "AUTO") or parts[4] not in ("0", "1") \
                 or parts[7] not in ("0", "1"):
+            self.bad_lines += 1
             return
         try:
             status = DriveStatus(
@@ -163,4 +166,4 @@ class NavyaLink:
             self.status = status
             self._ready.set()
         except ValueError:
-            pass
+            self.bad_lines += 1

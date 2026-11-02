@@ -308,7 +308,7 @@ def test_link_status_v1_and_v2():
         link._parse_status("S,MANUAL,1464,1000,0,0,0,1")          # v1 status still parsed
         assert link.status.mode == "MANUAL" and link.status.steer_state == "-"
         link._parse_status("S,AUO,1464,1848,1,86,86,0")           # a byte lost on the way: ignored
-        assert link.status.mode == "MANUAL"
+        assert link.status.mode == "MANUAL" and link.bad_lines == 1
         link.firmware = "v1"
         link.drive(100, 100, False, -250)
         assert link._ser.out.endswith(b"D,100,100,0\n")           # v1 gets 3 fields only

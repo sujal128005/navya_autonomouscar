@@ -431,6 +431,9 @@ def main():
     finally:
         if link:
             link.close()
+            if link.bad_lines:
+                print(f"Arduino link: {link.bad_lines} damaged status lines ignored "
+                      "(lost bytes; keep the camera off the Arduino's USB hub)")
         if vision:
             vision.close()
         if lidar:
