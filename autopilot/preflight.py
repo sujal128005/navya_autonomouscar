@@ -96,8 +96,10 @@ def check_arduino():
             report(WARN, "CH5 is in AUTO", "start in MANUAL; switch to AUTO once the program is running")
         else:
             report(OK, "Transmitter on, CH5 in MANUAL")
-        if s.mode != "NO_RC" and not 1400 <= s.ch2_us <= 1550:
-            report(WARN, f"Right stick not centred (CH2 = {s.ch2_us})", "let the stick spring back to centre")
+        # The firmware brakes below 1300 us and drives forward from 1520 us.
+        if s.mode != "NO_RC" and not 1340 <= s.ch2_us < 1520:
+            report(WARN, f"Right stick not centred (CH2 = {s.ch2_us})",
+                   "let the stick spring back to centre; if it is centred, re-centre the throttle trim")
 
         steer = {"OK": (OK, "Steering calibrated"),
                  "OFF": (OK, "Steering calibrated (motor off: no radio)"),

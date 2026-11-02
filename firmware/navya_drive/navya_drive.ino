@@ -85,10 +85,11 @@ const uint16_t POT_MAX_VALID = 1008;
 const uint8_t RAW_STEER_LIMIT = 255;
 
 // ---------------- Radio ----------------
-// Our FS-CT6B: CH2 centre ~1464, full up ~1756 with SWA down (SWA up = dual rate, ~1644).
+// Our FS-CT6B: CH2 centre ~1410-1464 (it drifts with the trim), full up ~1756 with SWA down
+// (SWA up = dual rate, ~1644), full back ~1120-1250.
 const bool REQUIRE_RC = true;          // false = bench testing without the transmitter
 const uint16_t RC_AUTO_ABOVE_US = 1700;
-const uint16_t RC_STOP_BELOW_US = 1400;
+const uint16_t RC_STOP_BELOW_US = 1300;  // well below the centre, so a centred stick never brakes
 const uint16_t RC_FORWARD_FROM_US = 1520;
 const uint16_t RC_FORWARD_FULL_US = 1740;
 const uint16_t RC_STEER_CENTER_US = 1500;   // CH1 stick centred (check in the S, line)
