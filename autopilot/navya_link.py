@@ -103,6 +103,7 @@ class NavyaLink:
         self._ser.write(line.encode("ascii"))
 
     def _read_loop(self):
+        pending = b""
         while not self._stop.is_set():
             try:
                 raw = self._ser.readline()
@@ -110,7 +111,14 @@ class NavyaLink:
                 break
             if not raw:
                 continue
-            line = raw.decode("ascii", errors="replace").strip()
+            pending += raw
+            if not pending.endswith(b"\n"):
+                # readline timed out mid-line: keep the start and wait for the rest
+                if len(pending) > 512:
+                    pending = b""
+                continue
+            line = pending.decode("ascii", errors="replace").strip()
+            pending = b""
             self.last_line = line
             if line.startswith("NAVYA READY"):
                 self.firmware = line[len("NAVYA READY"):].strip()

@@ -279,7 +279,7 @@ def test_link_status_v1_and_v2():
 
     class FakeSerial:
         def __init__(self, *a, **k):
-            self.lines = [b"NAVYA READY v2\n",
+            self.lines = [b"NAVYA READY", b" v2\n",       # a read that timed out mid-line
                           b"S,AUTO,1464,1848,1,86,86,0,1500,-300,-280,512,0,1,OK\n"]
             self.out = b""
 
