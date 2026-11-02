@@ -311,6 +311,15 @@ def test_link_status_v1_and_v2():
         link.drive(100, 100, False, -250)
         assert link._ser.out.endswith(b"D,100,100,0\n")           # v1 gets 3 fields only
         link._stop.set()
+
+        # The USB link can drop bytes: a banner without its version still ends as v2
+        FakeSerial.__init__ = lambda self, *a, **k: setattr(self, "lines", [
+            b"NAVYA READY \n", b"CFG,pwm_start=75,steering=1,cal_ok=0\n"]) or setattr(self, "out", b"")
+        link = navya_link.NavyaLink("COMX")
+        assert link.wait_ready(1)
+        time.sleep(0.1)
+        assert link.firmware == "v2", link.firmware
+        link._stop.set()
     finally:
         navya_link.serial.Serial = real
 

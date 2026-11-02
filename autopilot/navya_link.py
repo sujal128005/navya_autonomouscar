@@ -127,6 +127,8 @@ class NavyaLink:
                 self._parse_status(line)
             elif line.startswith("CFG,"):
                 self.config = dict(kv.split("=", 1) for kv in line[4:].split(",") if "=" in kv)
+                if "steering" in self.config:
+                    self.firmware = "v2"    # only v2 reports steering; covers a garbled banner
 
     def _parse_status(self, line: str):
         parts = line.split(",")
