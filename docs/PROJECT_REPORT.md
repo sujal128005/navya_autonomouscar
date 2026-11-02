@@ -1,6 +1,6 @@
 # Navya: project report
 
-*Autonomous ride-on car, student project. Status as of 1 November 2026.*
+*Autonomous ride-on car, student project. Status as of 2 November 2026.*
 
 ## 1. Summary
 
@@ -15,15 +15,24 @@ the obstacle was removed.
 
 Since then we have added the software for object detection, a trip recorder, steering
 and lane following, a LiDAR as a second sensor, a battery monitor, a phone dashboard
-and a pre-flight check. All of it is tested offline. The parts that need the car are
-waiting for their on-car tests (section 7).
+and a pre-flight check.
+
+**On 2 November we tested on the car.** The new firmware, the LiDAR, the camera
+calibration, the safety stops and the trip recorder were checked with the wheels in the
+air, then on the corridor floor. On the ground:
+- for a box, the car braked at 1.97 m and came to rest **1.10 m** away (tape measure;
+  the camera read 1.12 m);
+- with object detection on, it recognised a person 5 m away, braked at 2.85 m and came
+  to rest about **1.8–2.0 m** from them.
+
+Section 7 lists what is tested; section 8 lists what we found and fixed.
 
 ## 2. Goal
 
 | Stage | Goal | Status |
 |---|---|---|
 | Demo 1 | Drive straight; slow and stop for obstacles; resume when clear | **Done, shown 30 Oct** |
-| Demo 2 | Follow the corridor by steering between the walls; react to people and stop signs | Software done; steering parts on order |
+| Demo 2 | Follow the corridor by steering between the walls; react to people and stop signs | Reacting to people tested on the car; steering parts on order |
 | Later | LiDAR mapping; wheel-speed feedback; onboard computer | Planned |
 
 ## 3. Hardware
@@ -36,9 +45,9 @@ waiting for their on-car tests (section 7).
 | 2x 6S LiPo 22.2 V 5200 mAh | motor power |
 | Arduino Uno | radio input, throttle and brake output, steering motor, safety |
 | FlySky FS-CT6B + FS-R6B | manual driving, MANUAL/AUTO switch, emergency stop |
-| Intel RealSense D435i | depth (obstacles, walls) and colour (object detection) |
-| LDROBOT D500 LiDAR | 360° obstacle sensor (optional, laptop USB) |
-| Laptop (Windows, Python, Intel Iris Xe) | all perception and planning |
+| Intel RealSense D435i | depth (obstacles, walls) and colour (object detection); rigid mount at the front, 0.55 m high, 4.4° down |
+| LDROBOT D500 LiDAR | 360° obstacle sensor (optional, laptop USB); on the dashboard bar, above the camera |
+| Laptop (Windows, Python, Intel Iris Xe) | all perception and planning; camera straight into one USB-C port, a USB hub with the Arduino and LiDAR in the other |
 | Toy's own steering motor + BTS7960 driver + potentiometer + 2 limit switches | steering (being fitted) |
 
 **Constraints we work within**
@@ -76,6 +85,8 @@ flowchart LR
 The laptop sends the Arduino one short command line 30 times a second, for example
 `D,<left>,<right>,<brake>,<steer>`. The Arduino answers with a status line 10 times a
 second: mode, stick positions, PWM outputs, steering position and battery voltages.
+The link runs at 250000 baud, a speed the Uno's 16 MHz clock produces exactly. Both
+ends throw away any line that arrives damaged.
 
 ### Obstacle detection
 
@@ -104,9 +115,10 @@ stateDiagram-v2
     RESUMING --> CLEAR: clear for 0.5 s (start boost 0.4 s)
 ```
 
-Speed falls smoothly from cruise to creep between 3.8 m and 2.0 m. The car stops at
-2.0 m because it coasts about 0.9 m further, as measured on the first ground run. A
-short throttle boost gets the 31 kg car moving again from a standstill.
+Speed falls smoothly from cruise to creep between 3.8 m and 2.0 m. The car brakes at
+2.0 m because it rolls about 0.85 m further (measured again on 2 November), so it
+comes to rest about 1.1 m from the obstacle. A short throttle boost gets the 31 kg car
+moving again from a standstill.
 
 ### Extra perception (optional flags)
 
@@ -125,19 +137,19 @@ Safety is layered, so that no single failure lets the car run on.
 
 | Layer | Protection |
 |---|---|
-| Person with transmitter | Pulling the right stick back stops and brakes the car in any mode. The CH5 switch decides whether the laptop may drive at all. |
-| Arduino | Stops and brakes if the radio signal is lost for 0.1 s, or the laptop is silent for 0.3 s (a crash or a pulled cable). |
+| Person with transmitter | Pulling the right stick back stops and brakes the car in any mode, even while the laptop is asking it to drive (tested: brake on in all 283 readings). The CH5 switch decides whether the laptop may drive at all. |
+| Arduino | Stops and brakes if the radio signal is lost for 0.1 s, or the laptop is silent for 0.3 s, for example a crash or a pulled cable (tested: motors off after 0.26 s). |
 | Arduino, steering | Never drives the steering past a limit switch. Turns the steering motor off if it stalls for 1.5 s or the potentiometer reading is invalid. |
 | Laptop | Stops if depth frames stop for 0.5 s, if the LiDAR goes quiet with `--lidar`, or if the lens is covered. |
 | Battery monitor | Warns at 22.2 V. Below 21.6 V for 3 s, it stops the car and keeps it stopped. |
-| Pre-flight check | Checks every part before a run. Any FAIL blocks the launcher's drive option until it is confirmed. |
+| Pre-flight check | Checks every part before a run, including the laptop's own battery. Any FAIL blocks the launcher's drive option until it is confirmed. |
 
 ## 6. Software and tools
 
 | Tool | Purpose |
 |---|---|
 | `Navya.bat` | One-click menu: pre-flight, drive modes, viewers, calibration |
-| `preflight.py` | Checks packages, Arduino, radio, steering, batteries, camera calibration, LiDAR, SD card, phone link |
+| `preflight.py` | Checks packages, laptop battery, Arduino, radio, steering, batteries, camera calibration, LiDAR, SD card, phone link |
 | Phone dashboard (`--phone`) | Live camera, depth and LiDAR views and status. Sliders tune speeds and distances during a run, and can save them to `config.py`. |
 | Trip recorder (`--record`) | Camera, depth and LiDAR videos plus a telemetry CSV, saved to the SD card. `trip_report.py` summarises a trip. |
 | Ask Navya | Ask a question about the camera picture from the phone. Uses free AI services (Gemini, with Groq as fallback). For display only: it never drives the car. |
@@ -152,16 +164,18 @@ what it does.
 
 | Feature | Built | Tested offline | Tested on the car |
 |---|---|---|---|
-| Manual drive, MANUAL/AUTO, radio stop | yes | n/a | **yes** |
-| Obstacle stop and resume (depth) | yes | yes | **yes (Demo 1)** |
+| Manual drive, MANUAL/AUTO, radio stop | yes | n/a | **yes** (again with firmware v2, 2 Nov) |
+| Stick-back stop over the laptop; stop when the laptop is silent | yes | yes | **yes (2 Nov, wheels in the air)** |
+| Obstacle stop and resume (depth) | yes | yes | **yes**: brakes at 1.97 m, rests 1.10 m from a box (2 Nov) |
 | Phone dashboard | yes | yes | **yes (Demo 1)** |
 | Wall lane finder (viewer) | yes | yes | viewer only, not steering yet |
-| Object detection (`--vision`) | yes | yes | not yet |
-| Trip recorder | yes | yes | not yet |
-| Steering firmware v2 + calibration | yes | firmware compiles | waiting for parts |
+| Object detection (`--vision`) | yes | yes | **yes**: person seen at 5 m, rests 1.8–2.0 m away (2 Nov); "drive on after the person leaves" still to test on the ground |
+| Trip recorder | yes | yes | **yes (2 Nov)**; the numbers below come from its recordings |
+| Camera calibration | yes | yes | **yes**: camera and tape agree within 2 cm |
+| LiDAR (`--lidar`, radar view) | yes | yes | mounted and aligned (camera and LiDAR agree within 6 cm on a wall); in the full program it sometimes reports "lost", being investigated, so ground runs use the camera only for now |
+| Steering firmware v2 + calibration | yes | firmware compiles | firmware v2 on the car; steering waiting for parts |
 | Lane following (`--steer`) | yes | yes | waiting for parts |
 | Battery monitor | yes | yes | waiting for 4 resistors |
-| LiDAR (`--lidar`, radar view) | yes | yes (simulated packets) | not yet |
 | Live tuning, Ask Navya | yes | yes | Ask Navya needs free keys |
 
 ## 8. Lessons from Demo 1
@@ -174,15 +188,31 @@ what it does.
 | Tape-lane detection failed | Reflections on the glossy floor | Lane found from the walls instead, using depth |
 | Arduino upload failures | CH340 clone driver; Serial Monitor holding the port | Driver 3.5 pinned; the pre-flight check now warns about the open IDE |
 
+### Found and fixed in the on-car tests (2 November)
+
+| Problem seen | Cause | Fix |
+|---|---|---|
+| The Arduino stopped working whenever it was plugged into another USB port | Windows installed the newer CH340 driver (3.9) for each new port, and the clone chip fails with it | The 3.9 driver was removed from Windows; only 3.5 remains |
+| About 15 damaged Arduino messages a minute, causing short false brake-and-restart jerks | At 115200 baud the Uno's clock is 2% off, and the clone USB chip drops bytes | Link moved to 250000 baud (exact): 0 damaged in 1,200 lines. Damaged lines are now ignored and counted |
+| The brake flickered on with the stick untouched | The stick's centre had drifted from ~1464 to ~1410 µs, right at the 1400 µs stop line | Stop line lowered to 1300 µs; a full pull back reads 1112–1250 µs |
+| The camera ran at USB 2 and sometimes stopped sending | It shared a cheap USB 2 hub; after re-plugging it can get stuck | Camera straight into the laptop (now USB 3.2); the program resets a stuck camera by itself |
+| The LiDAR saw the camera 0.37 m ahead | Both were at the same height | LiDAR raised above the camera |
+| After a few hard stops the floor counted as an obstacle | The taped camera mount nodded forward 8° on braking | Camera mounted rigidly, then recalibrated |
+| The laptop went to sleep in the middle of testing | The hub's charging pass-through could not keep up; the battery reached 4% | Charge the laptop directly; the pre-flight check now fails below 20% battery |
+
 ## 9. Next steps
 
-1. Fit the steering parts (BTS7960, potentiometer, limit switches, fuses).
-   Upload firmware v2, calibrate, and measure the real steering angle.
-2. First lane-following run in the corridor at creep speed, with `--record` on.
-3. Mount and align the LiDAR, then run with `--lidar`.
-4. Add the battery-monitor resistors (4 resistors on A4/A5).
-5. Later: LiDAR mapping, wheel-speed feedback (needs an Arduino Mega), and moving
+1. Finish the person test on the ground: the car must drive on once the person steps aside.
+2. Find why the LiDAR sometimes reports "lost" in the full program (the program now
+   logs the details), then run with `--lidar` on the ground.
+3. Add the battery-monitor resistors (4 resistors on A4/A5). Today nothing warns
+   before the LiPos run low.
+4. Fit the steering parts (BTS7960, potentiometer, limit switches, fuses), calibrate,
+   and measure the real steering angle.
+5. First lane-following run in the corridor at creep speed, with `--record` on.
+6. Later: LiDAR mapping, wheel-speed feedback (needs an Arduino Mega), and moving
    the software to an onboard computer.
 
-**What we need:** the steering parts order (₹2,302), corridor time for testing, and
-later an Arduino Mega (about ₹1,000–1,500) for wheel-speed sensors.
+**What we need:** the steering parts order (₹2,302), 4 resistors, corridor time for
+testing, and later an Arduino Mega (about ₹1,000–1,500) for wheel-speed sensors. A
+USB-C hub that really charges the laptop would also help.
