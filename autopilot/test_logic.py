@@ -490,6 +490,11 @@ def test_lidar_parser_builds_full_turns():
     assert abs(scan.angle_deg[13] - 13) < 1e-6 and abs(scan.distance_m[13] - 1.001) < 1e-9
     assert not np.any(np.isclose(scan.distance_m, 0.5))   # the corrupt packet's points are dropped
 
+    # Reading that starts half-way round: the half turn is dropped, the next full turn kept
+    parser = LidarParser()
+    scans = parser.feed(turn[47 * 15:] + turn + lidar_packet(0, 11, [1500] * 12), now=1.0)
+    assert len(scans) == 1 and len(scans[0].angle_deg) == 360, [len(s.angle_deg) for s in scans]
+
 
 def test_lidar_corridor_and_sides():
     from lidar import Scan, corridor_distance, nearest_by_side

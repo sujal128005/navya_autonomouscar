@@ -143,9 +143,11 @@ class LidarParser:
         step = (end - start) / (POINTS_PER_PACKET - 1)
         scan = None
         if self._last_start is not None and start < self._last_start and self._angles:
-            # Start angle went back past 0: the turn is complete.
-            scan = Scan(np.array(self._angles), np.array(self._dists), np.array(self._intens),
-                        self.rpm, now)
+            # Start angle went back past 0: the turn is complete. The very first one is
+            # usually only part of a turn (reading began mid-way round): drop that.
+            if self._angles[0] < 20:
+                scan = Scan(np.array(self._angles), np.array(self._dists), np.array(self._intens),
+                            self.rpm, now)
             self._angles, self._dists, self._intens = [], [], []
         self._last_start = start
         self.rpm = speed / 6            # degrees per second -> turns per minute

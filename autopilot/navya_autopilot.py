@@ -77,6 +77,18 @@ def start_camera(with_color=False, record_to=None, replay_from=None):
                 raise
             print(f"Colour camera could not start alongside depth ({e}); "
                   "no camera picture on the phone and no object detection.")
+    if not replay_from:
+        try:
+            pipeline.wait_for_frames(3000)
+        except RuntimeError:
+            # After re-plugging, the D435i can get stuck sending nothing; a reset frees it.
+            print("Camera sends no frames - resetting it (about 6 s)...")
+            pipeline.stop()
+            profile.get_device().hardware_reset()
+            time.sleep(6)
+            pipeline = rs.pipeline()
+            profile = pipeline.start(cfg)
+            pipeline.wait_for_frames(3000)
     device = profile.get_device()
     depth_scale = device.first_depth_sensor().get_depth_scale()
     i = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
@@ -91,8 +103,8 @@ def start_camera(with_color=False, record_to=None, replay_from=None):
     print(f"Camera: {device.get_info(rs.camera_info.name)}, {source}, "
           f"{intr.width}x{intr.height}" + (" + colour" if color else ""))
     if usb.startswith("2") and not replay_from:
-        print("WARNING: camera is on USB 2. Use a blue USB 3 port/cable, or lower "
-              "DEPTH_WIDTH/HEIGHT to 424x240 in config.py.")
+        print("WARNING: camera is on USB 2: it works, but depth + colour is near its limit. "
+              "Use a USB 3 data cable (phone charger cables are USB 2).")
     return pipeline, intr, depth_scale, color_intr
 
 

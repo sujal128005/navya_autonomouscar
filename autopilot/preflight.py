@@ -143,26 +143,37 @@ def check_camera():
     if usb.startswith("3"):
         report(OK, f"{dev.get_info(rs.camera_info.name)} on USB {usb}")
     else:
-        report(WARN, f"Camera on USB {usb}", "use a blue USB 3 port / flip the USB-C plug for full speed")
+        report(WARN, f"Camera on USB {usb}",
+               "works, but depth + colour is near USB 2's limit: use a USB 3 data cable "
+               "(phone charger cables are USB 2) / flip the USB-C plug")
 
-    pipeline = rs.pipeline()
-    cfg = rs.config()
-    cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT, rs.format.z16, config.DEPTH_FPS)
-    try:
+    def grab_depth():
+        pipeline = rs.pipeline()
+        cfg = rs.config()
+        cfg.enable_stream(rs.stream.depth, config.DEPTH_WIDTH, config.DEPTH_HEIGHT, rs.format.z16, config.DEPTH_FPS)
         profile = pipeline.start(cfg)
-    except RuntimeError as e:
-        report(FAIL, "Camera won't start", f"{e} - is another Navya program using it?")
-        return
+        try:
+            scale = profile.get_device().first_depth_sensor().get_depth_scale()
+            intr = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+            frames = [np.array(pipeline.wait_for_frames(2000).get_depth_frame().get_data()) for _ in range(20)]
+        finally:
+            pipeline.stop()
+        return frames, scale, intr
+
     try:
-        scale = profile.get_device().first_depth_sensor().get_depth_scale()
-        intr = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
-        frames = [np.array(pipeline.wait_for_frames(2000).get_depth_frame().get_data()) for _ in range(20)]
+        frames, scale, intr = grab_depth()
         report(OK, "Camera delivers depth frames")
     except RuntimeError:
-        report(FAIL, "Camera stops sending frames", "re-plug the cable; try another USB 3 port")
-        return
-    finally:
-        pipeline.stop()
+        # After re-plugging, the D435i can get stuck sending nothing; a reset frees it.
+        try:
+            dev.hardware_reset()
+            time.sleep(6)
+            frames, scale, intr = grab_depth()
+            report(OK, "Camera delivers depth frames (after a camera reset)")
+        except RuntimeError as e:
+            report(FAIL, "Camera sends no frames, even after a reset",
+                   f"{e} - is another Navya program using it? Re-plug the cable")
+            return
 
     # Does the floor still match the saved calibration? (camera knocked or re-mounted)
     from calibrate_camera import fit_plane

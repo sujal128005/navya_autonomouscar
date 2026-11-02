@@ -510,8 +510,12 @@ Run `calibrate_camera.py --write` first. The floor map relies on the camera heig
 
 - **"Could not pick the Arduino port"**: pass `--port COM5` (Device Manager shows the
   number) or set `SERIAL_PORT` in `config.py`.
-- **"camera is on USB 2"**: use a blue USB 3 port and the original cable. If you must
-  stay on USB 2, set 424x240 in `config.py`.
+- **"camera is on USB 2"**: the cable or port is USB 2. Phone charger cables and cheap
+  USB-C hubs are USB 2 even when marked "PD 3.0". Plug the camera straight into the
+  laptop with a USB 3 data cable. On USB 2 it still works (depth 30 fps + colour
+  15 fps was measured at 28 fps), but with no margin. 424x240 is not offered on USB 2.
+- **Camera sends no frames** (often after re-plugging): the camera got stuck. The
+  pre-flight check and the autopilot reset it by themselves and try again.
 - **Mode stays `NO_RC`**: check receiver power (5V/GND) and that it is bound to the
   transmitter (receiver LED solid).
 - **Wheels don't move in AUTO but the laptop shows speed**: is the status `laptop ok`
