@@ -182,15 +182,28 @@ tested on 3 Nov 2026 at the desk; not yet on the car.
 3. Object detection:
    - put `yolo11n.pt` in `autopilot/models/`, then run `python export_models.py`;
    - it builds `yolo11n.engine` (TensorRT, FP16, about 7 minutes): 23 ms per image on the GPU.
-4. Every session:
-   - `source .venv/bin/activate`, then `./navya.sh` (the same menu as `Navya.bat`);
-   - Q quits the autopilot, as on the laptop.
+4. Every session, from the laptop: **double-click `Navya Jetson.bat`**. It:
+   - finds the Jetson on the laptop's current Wi-Fi (`jetson/find_jetson.py`) and remembers it;
+   - opens the Navya menu (`navya.sh`) **on the Jetson**, after fetching the latest code;
+   - opens the dashboard in the laptop's browser as soon as a drive or viewer starts.
 
-**From the laptop over SSH:**
-- the laptop's Mobile hotspot plus `ssh jetson`; the key is in `~/.ssh/navya_jetson`;
-- college Wi-Fi blocks device-to-device traffic, so use the hotspot;
-- on the Jetson, serial ports are `/dev/ttyUSB*`; auto-detection still picks the Arduino
-  (CH340) and the LiDAR (CP210x).
+   Q quits, as on the laptop. Without a screen (over SSH), the viewers and `--show` appear
+   on the dashboard instead of in windows.
+
+**Network:**
+- the laptop and the Jetson must share one Wi-Fi: a phone hotspot or the laptop's Mobile
+  hotspot. College Wi-Fi blocks device-to-device traffic.
+- `ssh jetson` uses the key `~/.ssh/navya_jetson`, plus a `Host jetson` entry in
+  `~/.ssh/config` that `find_jetson.py` keeps up to date.
+
+**On the Jetson:**
+- the Arduino needs the CH340 driver: `bash jetson/build_ch341.sh` (once, and after
+  JetPack updates);
+- serial ports are `/dev/ttyUSB*`; auto-detection picks the Arduino (CH340) and the LiDAR
+  (CP210x);
+- trip recordings go to the Samsung T7 SSD (`/mnt/t7ssd/navya_trips`). Plug it in before
+  switching the Jetson on, or run `sudo mount /mnt/t7ssd`;
+- plug the camera straight into a Jetson USB port. Through a USB-C dock it fails to start.
 
 ## Bring-up, in this order
 

@@ -30,7 +30,7 @@ while true; do
 
    1  Pre-flight check
 
-   2  Drive          (watch on phone)
+   2  Drive          (watch on the dashboard)
    3  Drive + object detection + record trip
    4  Drive + lane following (steering)
    5  Drive with everything (detection, steering, record)
