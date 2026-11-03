@@ -41,6 +41,9 @@ def removable_drives() -> list[Path]:
 def storage_root() -> Path:
     if config.RECORD_DIR != "auto":
         return Path(config.RECORD_DIR)
+    ssd = Path(config.RECORD_SSD_DIR)
+    if os.path.ismount(ssd.parent):          # only when the SSD is really plugged in and mounted
+        return ssd
     drives = removable_drives()
     if drives:
         best = max(drives, key=lambda d: shutil.disk_usage(d).free)

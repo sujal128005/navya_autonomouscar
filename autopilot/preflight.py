@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import config
 
@@ -224,6 +225,11 @@ def check_lidar():
 
 def check_storage():
     from trip_recorder import removable_drives
+    ssd = Path(config.RECORD_SSD_DIR)
+    if os.path.ismount(ssd.parent):
+        free = shutil.disk_usage(ssd.parent).free / 1e9
+        report(OK if free > 20 else WARN, f"Recordings go to the SSD {ssd} - {free:.0f} GB free")
+        return
     drives = removable_drives()
     if drives:
         best = max(drives, key=lambda d: shutil.disk_usage(d).free)

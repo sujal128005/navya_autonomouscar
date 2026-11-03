@@ -104,7 +104,9 @@ STOP_SIGN_IGNORE_S = 5.0        # ...then drive on, ignoring stop signs for this
 VISION_MAX_AGE_S = 0.5          # detections older than this are ignored
 
 # --- Trip recorder (python navya_autopilot.py --record) ---
-RECORD_DIR = "auto"         # auto = SD card if inserted, else autopilot/recordings; or a folder path
+RECORD_DIR = "auto"         # auto = the SSD below if mounted, else an SD card / USB stick,
+                            # else autopilot/recordings; or a folder path
+RECORD_SSD_DIR = "/mnt/t7ssd/navya_trips"   # Jetson: Samsung T7 (shared with the drone project)
 RECORD_FPS = 15             # video frames per second
 RECORD_LOG_HZ = 10          # telemetry rows per second
 RECORD_MIN_FREE_GB = 2.0    # stop recording (not driving) when the disk gets this full
