@@ -279,11 +279,13 @@ def test_link_status_v1_and_v2():
 
     class FakeSerial:
         def __init__(self, *a, **k):
-            self.lines = [b"NAVYA READY", b" v2\n",       # a read that timed out mid-line
-                          b"S,AUTO,1464,1848,1,86,86,0,1500,-300,-280,512,0,1,OK\n"]
+            # chunks as USB delivers them: a line split over two reads, two lines in one read
+            self.lines = [b"NAVYA READY", b" v2\nS,AUTO,1464,1848,1,86,86,0,1500,-300,-280,512,0,1,OK\n"]
             self.out = b""
 
-        def readline(self):
+        in_waiting = 0
+
+        def read(self, n=1):
             time.sleep(0.01)
             return self.lines.pop(0) if self.lines else b""
 

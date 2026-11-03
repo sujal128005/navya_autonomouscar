@@ -105,32 +105,36 @@ class NavyaLink:
         self._ser.write(line.encode("ascii"))
 
     def _read_loop(self):
+        # Read whatever has arrived and split it into lines here. (readline() reads one byte
+        # per call; with the ch341 driver on the Jetson that returned the same data over and
+        # over.) A line that arrives in two reads is kept together.
         pending = b""
         while not self._stop.is_set():
             try:
-                raw = self._ser.readline()
+                chunk = self._ser.read(self._ser.in_waiting or 1)
             except serial.SerialException:
                 break
-            if not raw:
+            if not chunk:
                 continue
-            pending += raw
-            if not pending.endswith(b"\n"):
-                # readline timed out mid-line: keep the start and wait for the rest
-                if len(pending) > 512:
-                    pending = b""
-                continue
-            line = pending.decode("ascii", errors="replace").strip()
-            pending = b""
-            self.last_line = line
-            if line.startswith("NAVYA READY"):
-                self.firmware = line[len("NAVYA READY"):].strip()
-                self._ready.set()
-            elif line.startswith("S,"):
-                self._parse_status(line)
-            elif line.startswith("CFG,"):
-                self.config = dict(kv.split("=", 1) for kv in line[4:].split(",") if "=" in kv)
-                if "steering" in self.config:
-                    self.firmware = "v2"    # only v2 reports steering; covers a garbled banner
+            *lines, pending = (pending + chunk).split(b"\n")
+            if len(pending) > 512:
+                pending = b""
+            for raw in lines:
+                self._handle_line(raw.decode("ascii", errors="replace").strip())
+
+    def _handle_line(self, line: str):
+        if not line:
+            return
+        self.last_line = line
+        if line.startswith("NAVYA READY"):
+            self.firmware = line[len("NAVYA READY"):].strip()
+            self._ready.set()
+        elif line.startswith("S,"):
+            self._parse_status(line)
+        elif line.startswith("CFG,"):
+            self.config = dict(kv.split("=", 1) for kv in line[4:].split(",") if "=" in kv)
+            if "steering" in self.config:
+                self.firmware = "v2"    # only v2 reports steering; covers a garbled banner
 
     def _parse_status(self, line: str):
         parts = line.split(",")
