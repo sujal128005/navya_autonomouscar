@@ -279,14 +279,15 @@ def check_phone():
         else:
             report(WARN, "Mobile hotspot looks off", "Windows Settings > Network > Mobile hotspot (for --phone)")
     else:
-        # Jetson drives the car: it joins the laptop's Mobile hotspot, and the laptop's
-        # browser shows the dashboard (and the laptop reaches the Jetson by SSH).
-        on_laptop = [a for a in addrs if a.startswith("192.168.137.")]
-        if on_laptop:
-            report(OK, "On the laptop's hotspot", f"dashboard: open http://{on_laptop[0]}:8080 on the laptop")
+        # Jetson drives the car: the laptop joins the same Wi-Fi (its own Mobile hotspot or a
+        # phone hotspot - not college Wi-Fi, which blocks device-to-device traffic), opens the
+        # dashboard in its browser and reaches the Jetson by SSH.
+        lan = [a for a in addrs if "." in a and not a.startswith(("127.", "172.17."))]  # skip Docker's
+        if lan:
+            report(OK, f"Network {lan[0]}", f"dashboard: open http://{lan[0]}:8080 on the laptop (same Wi-Fi)")
         else:
-            report(WARN, "Not on the laptop's hotspot", "turn on the laptop's Mobile hotspot and join it "
-                         "(needed for the dashboard and SSH from the laptop)")
+            report(WARN, "No network", "join the laptop's (or a phone's) hotspot - needed for the dashboard "
+                         "and SSH from the laptop")
     probe = socket.socket()
     try:
         probe.bind(("0.0.0.0", 8080))
