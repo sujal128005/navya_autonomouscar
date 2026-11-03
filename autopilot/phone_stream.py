@@ -6,7 +6,9 @@ start-up (usually http://192.168.137.1:8080). Any phone browser works; nothing t
 """
 
 import json
+import os
 import socket
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -132,11 +134,17 @@ class PhoneStream:
             ips.update(socket.gethostbyname_ex(socket.gethostname())[2])
         except OSError:
             pass
-        return [f"http://{ip}:{self.port}" for ip in sorted(ips) if not ip.startswith("127.")]
+        if os.name != "nt":     # on Linux the host name resolves to 127.0.1.1 only
+            try:
+                ips.update(subprocess.run(["hostname", "-I"], capture_output=True, text=True).stdout.split())
+            except OSError:
+                pass
+        return [f"http://{ip}:{self.port}" for ip in sorted(ips)
+                if "." in ip and not ip.startswith(("127.", "172.17."))]   # 172.17 = Docker
 
     def print_addresses(self):
-        print("Phone view: join the laptop's network, then open one of:")
-        for url in self.addresses() or [f"http://<laptop-ip>:{self.port}"]:
+        print("Dashboard: from a laptop or phone on the same Wi-Fi, open one of:")
+        for url in self.addresses() or [f"http://<this-computer's-ip>:{self.port}"]:
             print("   ", url)
 
     def publish(self, name: str, image_bgr):
