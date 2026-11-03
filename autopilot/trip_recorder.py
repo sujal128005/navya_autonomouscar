@@ -25,9 +25,11 @@ LOCAL_DIR = Path(__file__).with_name("recordings")
 
 
 def removable_drives() -> list[Path]:
-    """Removable drives (SD cards, USB sticks) on Windows; empty elsewhere."""
+    """Removable drives (SD cards, USB sticks): drive letters on Windows, mounts under /media on Linux."""
     if os.name != "nt":
-        return []
+        user = os.environ.get("USER", "")
+        return [p for base in (Path("/media") / user, Path("/run/media") / user) if base.is_dir()
+                for p in sorted(base.iterdir()) if os.path.ismount(p)]
     drives = []
     for letter in string.ascii_uppercase:
         root = f"{letter}:\\"

@@ -12,20 +12,16 @@ The rear wheels stay braked the whole time. Keep fingers away from the front whe
 """
 
 import argparse
-import os
 import sys
 import time
 
+from keyboard_input import read_key
 from navya_link import NavyaLink
 
 PULSE_PWMS = (120, 170, 220)   # tried in turn until the steering moves
 SEND_PERIOD_S = 0.05
 END_STILL_S = 0.6              # pot unchanged this long = reached the end stop
 END_TIMEOUT_S = 8.0
-
-if os.name == "nt":
-    import msvcrt
-
 
 def send_for(link: NavyaLink, pwm: int, seconds: float):
     end = time.monotonic() + seconds
@@ -48,15 +44,11 @@ def hold_still(link: NavyaLink, seconds: float):
 def wait_key(link: NavyaLink, prompt: str, choices: str) -> str:
     """Wait for one of `choices` ("\r" = ENTER), holding the steering still meanwhile."""
     print(prompt, end="", flush=True)
-    if os.name != "nt":
-        answer = (input().strip().lower() or "\r")[:1]
-        return answer if answer in choices else choices[0]
     while True:
-        if msvcrt.kbhit():
-            key = msvcrt.getwch().lower()
-            if key in choices:
-                print(key if key.isalpha() else "")
-                return key
+        key = read_key()
+        if key and key in choices:
+            print(key if key.isalpha() else "")
+            return key
         hold_still(link, SEND_PERIOD_S)
 
 

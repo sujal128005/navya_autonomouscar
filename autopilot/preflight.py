@@ -43,17 +43,20 @@ def check_packages():
 
 
 def running_programs() -> set[str]:
-    if os.name != "nt":
-        return set()
-    out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True).stdout
-    return {line.split('","')[0].strip('"').lower() for line in out.splitlines() if line}
+    """Names of running programs, lower case, without '.exe'."""
+    if os.name == "nt":
+        out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True).stdout
+        names = [line.split('","')[0].strip('"') for line in out.splitlines() if line]
+    else:
+        names = subprocess.run(["ps", "-eo", "comm="], capture_output=True, text=True).stdout.split()
+    return {n.lower().removesuffix(".exe") for n in names}
 
 
 def check_programs():
     progs = running_programs()
-    if "serial-monitor.exe" in progs:
+    if "serial-monitor" in progs:
         report(FAIL, "Arduino Serial Monitor is open", "close it - it blocks the Arduino's port")
-    elif "arduino ide.exe" in progs:
+    elif progs & {"arduino ide", "arduino-ide"}:
         report(WARN, "Arduino IDE is open", "close it before driving (it can grab the port)")
     else:
         report(OK, "Arduino IDE closed")
@@ -226,8 +229,8 @@ def check_storage():
         report(OK, f"SD card {best} - {shutil.disk_usage(best).free / 1e9:.0f} GB free")
     else:
         free_c = shutil.disk_usage("C:\\" if os.name == "nt" else "/").free / 1e9
-        report(WARN if free_c < 10 else INFO, "No SD card inserted",
-               f"--record would use the laptop disk ({free_c:.0f} GB free)")
+        report(WARN if free_c < 10 else INFO, "No SD card / USB stick for recordings",
+               f"--record would use this computer's own disk ({free_c:.0f} GB free)")
 
 
 def check_detection():
@@ -239,19 +242,32 @@ def check_detection():
         report(INFO, "YOLO model not downloaded", "only needed for --vision (see README)")
         return
     _, _, backend = pick_backend()
-    report(OK if "OpenVINO" in backend else WARN, f"Object detection: {backend}",
-           "" if "OpenVINO" in backend else "run python export_models.py for the fast version")
+    fast = "OpenVINO" in backend or "TensorRT" in backend
+    report(OK if fast else WARN, f"Object detection: {backend}",
+           "" if fast else "run python export_models.py for the fast version")
+
+
+def local_addresses() -> list[str]:
+    if os.name != "nt":
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True).stdout
+        return out.split()
+    try:
+        return socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        return []
 
 
 def check_phone():
-    try:
-        addrs = socket.gethostbyname_ex(socket.gethostname())[2]
-    except OSError:
-        addrs = []
-    if "192.168.137.1" in addrs:
-        report(OK, "Mobile hotspot on", "phone: join it, open http://192.168.137.1:8080")
-    else:
+    # The address this computer gets when it runs the hotspot itself:
+    # Windows Mobile hotspot 192.168.137.1, Linux NetworkManager hotspot 10.42.0.1.
+    hotspot = "192.168.137.1" if os.name == "nt" else "10.42.0.1"
+    if hotspot in local_addresses():
+        report(OK, "Hotspot on", f"phone: join it, open http://{hotspot}:8080")
+    elif os.name == "nt":
         report(WARN, "Mobile hotspot looks off", "Windows Settings > Network > Mobile hotspot (for --phone)")
+    else:
+        report(INFO, "No hotspot on this computer", "only for the phone page: nmcli device wifi hotspot "
+                     "ssid Navya password <8+ characters>, or join the phone and this computer to one network")
     probe = socket.socket()
     try:
         probe.bind(("0.0.0.0", 8080))
@@ -271,8 +287,14 @@ def check_phone():
 
 
 def check_laptop_power():
-    """The laptop sleeps at critical battery, which cuts the camera, Arduino and LiDAR."""
+    """The laptop sleeps at critical battery, which cuts the camera, Arduino and LiDAR.
+    On a Jetson: report the power mode instead (full speed = MAXN)."""
     if os.name != "nt":
+        if shutil.which("nvpmodel"):
+            out = subprocess.run(["nvpmodel", "-q"], capture_output=True, text=True).stdout
+            mode = out.split("NV Power Mode:")[-1].split()[0] if "NV Power Mode:" in out else "?"
+            report(OK if mode.startswith("MAXN") else WARN, f"Jetson power mode {mode}",
+                   "" if mode.startswith("MAXN") else "full speed: sudo nvpmodel -m 2 (Orin Nano Super: MAXN_SUPER)")
         return
     import ctypes
 

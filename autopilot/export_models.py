@@ -2,8 +2,11 @@
 
     python export_models.py
 
-Needs models/yolo11n.pt (see README). Creates models/yolo11n.onnx (ONNX Runtime, CPU) and
-models/yolo11n_openvino_model/ (OpenVINO, runs on the Intel GPU; needs: pip install openvino).
+Needs models/yolo11n.pt (see README). Creates:
+  - on a Jetson: models/yolo11n.engine (TensorRT on the GPU, FP16; takes a few minutes);
+  - elsewhere: models/yolo11n.onnx (ONNX Runtime, CPU) and models/yolo11n_openvino_model/
+    (OpenVINO, runs on the Intel GPU; needs: pip install openvino).
+A TensorRT engine only runs on the kind of device and TensorRT version that built it.
 The detector then picks the fastest one by itself.
 """
 
@@ -23,6 +26,15 @@ def main():
         print(f"{MODEL_PATH} is missing - download it first (see README).")
         return 1
     model = YOLO(str(MODEL_PATH))
+    try:
+        import tensorrt  # noqa: F401
+        import torch
+        if torch.cuda.is_available():
+            print("TensorRT:", model.export(format="engine", imgsz=config.DETECT_IMAGE_SIZE, half=True,
+                                            dynamic=False, device=0))
+            return 0
+    except ImportError:
+        pass
     print("ONNX:", model.export(format="onnx", imgsz=config.DETECT_IMAGE_SIZE, simplify=True, dynamic=False))
     try:
         import openvino  # noqa: F401

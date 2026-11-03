@@ -14,7 +14,6 @@ stick back at any time to stop it.
 """
 
 import argparse
-import os
 import sys
 import time
 
@@ -29,6 +28,7 @@ from phone_stream import PhoneStream
 import live_settings
 from ask_navya import AskNavya
 from battery import BatteryGuard, describe
+from keyboard_input import read_key
 from lane import WallLaneFinder
 from lane_follow import LaneFollower
 from speed_planner import SpeedPlanner, apply_trim
@@ -36,17 +36,6 @@ from trip_recorder import TripRecorder
 
 FRAME_TIMEOUT_MS = 500
 PHONE_COLOR_FPS = 15
-
-if os.name == "nt":
-    import msvcrt
-
-    def read_key() -> str | None:
-        if msvcrt.kbhit():
-            return msvcrt.getwch().lower()
-        return None
-else:
-    def read_key() -> str | None:
-        return None
 
 
 def start_camera(with_color=False, record_to=None, replay_from=None):

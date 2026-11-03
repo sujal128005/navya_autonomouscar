@@ -17,10 +17,19 @@ MODELS = Path(__file__).with_name("models")
 MODEL_PATH = MODELS / "yolo11n.pt"
 
 
-def pick_backend() -> tuple[Path, str | None, str]:
-    """Fastest model this laptop can run: (model path, predict device, description).
-    The ONNX/OpenVINO copies are made by export_models.py; the .pt is the fallback."""
+def pick_backend() -> tuple[Path, str | int | None, str]:
+    """Fastest model this computer can run: (model path, predict device, description).
+    The TensorRT/OpenVINO/ONNX copies are made by export_models.py; the .pt is the fallback."""
     choice = config.DETECT_BACKEND
+    engine_file = MODELS / "yolo11n.engine"
+    if choice in ("auto", "tensorrt") and engine_file.exists():
+        try:
+            import tensorrt  # noqa: F401
+            import torch
+            if torch.cuda.is_available():
+                return engine_file, 0, "TensorRT on the Jetson GPU"
+        except ImportError:
+            pass
     openvino_dir = MODELS / "yolo11n_openvino_model"
     if choice in ("auto", "openvino") and openvino_dir.exists():
         try:
@@ -36,6 +45,12 @@ def pick_backend() -> tuple[Path, str | None, str]:
             return onnx_file, None, "ONNX Runtime on the CPU"
         except ImportError:
             pass
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return MODEL_PATH, 0, "PyTorch on the GPU (run export_models.py for TensorRT)"
+    except ImportError:
+        pass
     return MODEL_PATH, None, "PyTorch on the CPU (slowest; run export_models.py)"
 
 
