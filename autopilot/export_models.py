@@ -14,6 +14,7 @@ import os
 import sys
 
 os.environ.setdefault("YOLO_OFFLINE", "1")
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")   # its auto-installs once upgraded numpy and broke torch
 
 import config
 from vision import MODEL_PATH
@@ -29,12 +30,14 @@ def main():
     try:
         import tensorrt  # noqa: F401
         import torch
-        if torch.cuda.is_available():
-            print("TensorRT:", model.export(format="engine", imgsz=config.DETECT_IMAGE_SIZE, half=True,
-                                            dynamic=False, device=0))
-            return 0
+        jetson = torch.cuda.is_available()
     except ImportError:
-        pass
+        jetson = False
+    if jetson:
+        # A failure here is shown, not hidden: falling back to ONNX would be much slower.
+        print("TensorRT:", model.export(format="engine", imgsz=config.DETECT_IMAGE_SIZE, half=True,
+                                        dynamic=False, device=0))
+        return 0
     print("ONNX:", model.export(format="onnx", imgsz=config.DETECT_IMAGE_SIZE, simplify=True, dynamic=False))
     try:
         import openvino  # noqa: F401
