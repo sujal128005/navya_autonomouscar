@@ -28,15 +28,16 @@ def report(status: str, what: str, detail: str = ""):
 
 
 def check_packages():
+    fast = ("openvino", False) if os.name == "nt" else ("tensorrt", False)   # Intel laptop / Jetson
     for name, needed in (("numpy", True), ("cv2", True), ("pyrealsense2", True), ("serial", True),
-                         ("ultralytics", False), ("openvino", False)):
+                         ("ultralytics", False), fast):
         try:
             importlib.import_module(name)
         except ImportError:
             if needed:
                 report(FAIL, f"Python package {name}", "pip install -r requirements.txt")
             else:
-                use = {"ultralytics": "--vision", "openvino": "fast --vision"}[name]
+                use = {"ultralytics": "--vision", "openvino": "fast --vision", "tensorrt": "fast --vision"}[name]
                 report(INFO, f"Python package {name} not installed", f"only needed for {use}")
     if not any(r[1].startswith("Python package") and r[0] == FAIL for r in results):
         report(OK, "Python packages")
@@ -141,7 +142,7 @@ def check_camera():
         return
     devices = list(rs.context().query_devices())
     if not devices:
-        report(FAIL, "RealSense camera not found", "plug it into the laptop (blue USB 3 port)")
+        report(FAIL, "RealSense camera not found", "plug it into a USB 3 port (blue on the laptop)")
         return
     dev = devices[0]
     usb = dev.get_info(rs.camera_info.usb_type_descriptor) if dev.supports(rs.camera_info.usb_type_descriptor) else "?"
