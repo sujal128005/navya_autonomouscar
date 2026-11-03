@@ -46,7 +46,8 @@ while true; do
    Q  Quit
 
 EOF
-    read -r -n1 -p "  Choose: " pick; echo; echo
+    read -r -n1 -p "  Choose: " pick || exit 0     # no keyboard any more (connection gone): quit
+    echo; echo
     case "${pick,,}" in
         1) run preflight.py ;;
         2) drive --phone ;;
