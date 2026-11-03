@@ -23,9 +23,9 @@ fi
 # shellcheck disable=SC1091
 . .venv/bin/activate
 pip install -q -U pip
-pip install -q "numpy<2"
 pip install -q torch==2.8.0 torchvision==0.23.0 --index-url "$JETSON_INDEX"
-pip install -q pyrealsense2 pyserial matplotlib "opencv-python<5" ultralytics
+# The Jetson torch build needs numpy 1.x; OpenCV 4.12+ would pull in numpy 2.
+pip install -q "numpy<2" "opencv-python<4.12" pyrealsense2 pyserial matplotlib ultralytics
 
 python - <<'EOF'
 import cv2, numpy, pyrealsense2, serial, torch, ultralytics
