@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 JETSON_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126   # NVIDIA's Jetson wheels for JetPack 6 / CUDA 12.6
 RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 
-if dpkg -s brltty >/dev/null 2>&1 || ! python3 -c "import ensurepip" 2>/dev/null || [ ! -f "$RULES" ]; then
+if dpkg-query -W -f='${Status}' brltty 2>/dev/null | grep -q "ok installed" ||! python3 -c "import ensurepip" 2>/dev/null || [ ! -f "$RULES" ]; then
     echo "Run this once first (it asks for the Jetson password):"
     echo "  sudo apt-get remove -y brltty && sudo apt-get install -y python3-venv && \\"
     echo "  sudo curl -fsSL https://raw.githubusercontent.com/IntelRealSense/librealsense/v2.59.1/config/99-realsense-libusb.rules -o $RULES && \\"
