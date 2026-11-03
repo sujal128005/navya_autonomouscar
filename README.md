@@ -163,6 +163,35 @@ something broke. Check it is green before taking the car out.
 
 All tunable numbers live in `autopilot/config.py`.
 
+### 3. Jetson Orin Nano (onboard computer)
+
+The same code runs on a Jetson Orin Nano with JetPack 6.2 (Python 3.10). Set up and
+tested on 3 Nov 2026 at the desk; not yet on the car.
+
+1. Once, with the Jetson password:
+   - remove `brltty` (Ubuntu's braille driver grabs the Arduino's CH340 chip);
+   - install `python3-venv`;
+   - add the RealSense USB rule.
+
+   `bash jetson/setup_jetson.sh` prints the exact command if any of this is missing.
+2. `bash jetson/setup_jetson.sh` creates `.venv`, Navya's own Python, so other projects
+   on the Jetson keep their packages. It installs:
+   - NVIDIA's GPU PyTorch (torch 2.8.0 from `pypi.jetson-ai-lab.io/jp6/cu126`);
+   - RealSense, ultralytics, pyserial;
+   - numpy 1.x, which the Jetson torch build needs. That's why OpenCV is pinned below 4.12.
+3. Object detection:
+   - put `yolo11n.pt` in `autopilot/models/`, then run `python export_models.py`;
+   - it builds `yolo11n.engine` (TensorRT, FP16, about 7 minutes): 23 ms per image on the GPU.
+4. Every session:
+   - `source .venv/bin/activate`, then `./navya.sh` (the same menu as `Navya.bat`);
+   - Q quits the autopilot, as on the laptop.
+
+**From the laptop over SSH:**
+- the laptop's Mobile hotspot plus `ssh jetson`; the key is in `~/.ssh/navya_jetson`;
+- college Wi-Fi blocks device-to-device traffic, so use the hotspot;
+- on the Jetson, serial ports are `/dev/ttyUSB*`; auto-detection still picks the Arduino
+  (CH340) and the LiDAR (CP210x).
+
 ## Bring-up, in this order
 
 **Every step until step 7 is done with the car on blocks (rear wheels off the ground).**
