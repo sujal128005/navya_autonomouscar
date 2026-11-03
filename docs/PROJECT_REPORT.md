@@ -1,13 +1,15 @@
 # Navya: project report
 
-*Autonomous ride-on car, student project. Status as of 2 November 2026.*
+*Autonomous ride-on car, student project. Status as of 3 November 2026.*
 
 ## 1. Summary
 
 Navya is a low-cost autonomous car built on a TZ-306 4x4 kids' ride-on car.
-A laptop riding in the car reads an Intel RealSense D435i depth camera and decides how
-fast to go. An Arduino Uno drives the two rear hub motors and enforces the safety rules.
-A FlySky radio lets a person take over or stop the car at any moment.
+An onboard computer reads an Intel RealSense D435i depth camera (and a LiDAR) and
+decides how fast to go. That computer is now an NVIDIA Jetson Orin Nano; until
+2 November it was a laptop riding in the car. An Arduino Uno drives the two rear hub
+motors and enforces the safety rules. A FlySky radio lets a person take over or stop
+the car at any moment.
 
 **Demo 1 was shown on 30 October 2026.** The car drove straight down a corridor. It
 slowed down and stopped by itself in front of an obstacle, and drove on by itself once
@@ -25,6 +27,19 @@ air, then on the corridor floor. On the ground:
 - with object detection on, it recognised a person 5 m away, braked at 2.85 m and came
   to rest about **1.8–2.0 m** from them.
 
+**On 3 November the software moved to the Jetson Orin Nano**, and passed a full bench
+test on the car (wall power, motors unplugged):
+- camera, Arduino, LiDAR, object detection and recording all ran together;
+- object detection runs on the Jetson's GPU (TensorRT): 23 ms per image;
+- the LiDAR problem from the laptop ("lost" several times a minute) did not occur at all
+  in 4.5 minutes;
+- trips record to a 1 TB SSD;
+- the laptop is now only the screen: one double-click finds the Jetson on the Wi-Fi and
+  opens its menu and live dashboard.
+
+Driving with the Jetson waits for a 12 V step-down converter (ordered) to power it from a
+LiPo. The full wiring is documented in `docs/Navya_wiring.pdf`.
+
 Section 7 lists what is tested; section 8 lists what we found and fixed.
 
 ## 2. Goal
@@ -33,7 +48,8 @@ Section 7 lists what is tested; section 8 lists what we found and fixed.
 |---|---|---|
 | Demo 1 | Drive straight; slow and stop for obstacles; resume when clear | **Done, shown 30 Oct** |
 | Demo 2 | Follow the corridor by steering between the walls; react to people and stop signs | Reacting to people tested on the car; steering parts on order |
-| Later | LiDAR mapping; wheel-speed feedback; onboard computer | Planned |
+| Onboard computer | Run everything on the car itself, laptop only as a screen | **Jetson set up and bench-tested 3 Nov**; needs its power converter to drive |
+| Later | LiDAR mapping; wheel-speed feedback | Planned |
 
 ## 3. Hardware
 
@@ -46,8 +62,10 @@ Section 7 lists what is tested; section 8 lists what we found and fixed.
 | Arduino Uno | radio input, throttle and brake output, steering motor, safety |
 | FlySky FS-CT6B + FS-R6B | manual driving, MANUAL/AUTO switch, emergency stop |
 | Intel RealSense D435i | depth (obstacles, walls) and colour (object detection); rigid mount at the front, 0.55 m high, 4.4° down |
-| LDROBOT D500 LiDAR | 360° obstacle sensor (optional, laptop USB); on the dashboard bar, above the camera |
-| Laptop (Windows, Python, Intel Iris Xe) | all perception and planning; camera straight into one USB-C port, a USB hub with the Arduino and LiDAR in the other |
+| LDROBOT D500 LiDAR | 360° obstacle sensor (optional, USB); on the dashboard bar, above the camera |
+| NVIDIA Jetson Orin Nano Super (JetPack 6.2) | onboard computer since 3 Nov: all perception and planning, object detection on its GPU; camera, Arduino and LiDAR straight into its USB ports |
+| Samsung T7 SSD, 1 TB | trip recordings on the Jetson |
+| Laptop (Windows) | the screen: dashboard in the browser, menu over Wi-Fi (SSH). Also still able to drive the car on its own, as on 2 Nov |
 | Toy's own steering motor + BTS7960 driver + potentiometer + 2 limit switches | steering (being fitted) |
 
 **Constraints we work within**
@@ -64,7 +82,7 @@ Section 7 lists what is tested; section 8 lists what we found and fixed.
 flowchart LR
     CAM[RealSense D435i<br/>depth + colour] -->|USB 3| LAP
     LID[LDROBOT D500 LiDAR<br/>optional] -->|USB| LAP
-    subgraph LAP[Laptop: navya_autopilot.py]
+    subgraph LAP[Jetson Orin Nano: navya_autopilot.py]
         OBS[Obstacle in path<br/>depth corridor] --> PLAN[Speed planner]
         LIDC[LiDAR path check] --> PLAN
         VIS[YOLO11n object detection<br/>people, stop signs] --> PLAN
@@ -79,10 +97,11 @@ flowchart LR
     ARD -->|throttle PWM, brake| YL[2x YL-12] --> HUB[2x hub motor]
     ARD -->|PWM| BTS[BTS7960] --> STEER[Toy steering motor]
     POT[Potentiometer, limit switches] --> ARD
-    LAP -.->|Wi-Fi hotspot| PHONE[Phone dashboard]
+    LAP -->|USB| SSD[1 TB SSD<br/>trip recordings]
+    LAP -.->|Wi-Fi| PHONE[Laptop: dashboard + menu]
 ```
 
-The laptop sends the Arduino one short command line 30 times a second, for example
+The Jetson sends the Arduino one short command line 30 times a second, for example
 `D,<left>,<right>,<brake>,<steer>`. The Arduino answers with a status line 10 times a
 second: mode, stick positions, PWM outputs, steering position and battery voltages.
 The link runs at 250000 baud, a speed the Uno's 16 MHz clock produces exactly. Both
@@ -91,7 +110,7 @@ ends throw away any line that arrives damaged.
 ### Obstacle detection
 
 Each depth image is turned into 3D points in level floor coordinates, using the
-camera's measured height (0.559 m) and tilt (14.6°). Only points inside a box in
+camera's measured height (0.554 m) and tilt (4.4° down). Only points inside a box in
 front of the car count as obstacles:
 - 0.45 m either side of the centre line;
 - from 0.15 m above the floor (so the floor, tape and cables are ignored) up to 1.6 m;
@@ -124,7 +143,7 @@ moving again from a standstill.
 
 | Flag | What it adds |
 |---|---|
-| `--vision` | YOLO11n detects objects in the colour image, about 19 ms per frame on the Iris Xe GPU through OpenVINO. People make the car stop 1 m earlier, including people up to 0.3 m outside the path. At a stop sign the car stops, waits 3 s, then drives on. |
+| `--vision` | YOLO11n detects objects in the colour image: 23 ms per frame on the Jetson's GPU through TensorRT (19 ms on the laptop's Iris Xe GPU through OpenVINO). People make the car stop 1 m earlier, including people up to 0.3 m outside the path. At a stop sign the car stops, waits 3 s, then drives on. |
 | `--lidar` | The LiDAR's nearest point in the same path also feeds the planner. The car obeys whichever sensor reports the nearer obstacle. |
 | `--steer` | The lane is found from the corridor walls in the depth data, fitted with RANSAC. This works on shiny floors, where tape-strip detection failed. Pure-pursuit steers towards the lane centre 1.5 m ahead. |
 
@@ -140,7 +159,7 @@ Safety is layered, so that no single failure lets the car run on.
 | Person with transmitter | Pulling the right stick back stops and brakes the car in any mode, even while the laptop is asking it to drive (tested: brake on in all 283 readings). The CH5 switch decides whether the laptop may drive at all. |
 | Arduino | Stops and brakes if the radio signal is lost for 0.1 s, or the laptop is silent for 0.3 s, for example a crash or a pulled cable (tested: motors off after 0.26 s). |
 | Arduino, steering | Never drives the steering past a limit switch. Turns the steering motor off if it stalls for 1.5 s or the potentiometer reading is invalid. |
-| Laptop | Stops if depth frames stop for 0.5 s, if the LiDAR goes quiet with `--lidar`, or if the lens is covered. |
+| Jetson (or laptop) | Stops if depth frames stop for 0.5 s, if the LiDAR goes quiet with `--lidar`, or if the lens is covered. |
 | Battery monitor | Warns at 22.2 V. Below 21.6 V for 3 s, it stops the car and keeps it stopped. |
 | Pre-flight check | Checks every part before a run, including the laptop's own battery. Any FAIL blocks the launcher's drive option until it is confirmed. |
 
@@ -148,10 +167,13 @@ Safety is layered, so that no single failure lets the car run on.
 
 | Tool | Purpose |
 |---|---|
-| `Navya.bat` | One-click menu: pre-flight, drive modes, viewers, calibration |
-| `preflight.py` | Checks packages, laptop battery, Arduino, radio, steering, batteries, camera calibration, LiDAR, SD card, phone link |
-| Phone dashboard (`--phone`) | Live camera, depth and LiDAR views and status. Sliders tune speeds and distances during a run, and can save them to `config.py`. |
-| Trip recorder (`--record`) | Camera, depth and LiDAR videos plus a telemetry CSV, saved to the SD card. `trip_report.py` summarises a trip. |
+| `Navya Jetson.bat` | On the laptop, one double-click: finds the Jetson on the Wi-Fi, opens the Navya menu on it, and opens the dashboard when a drive starts |
+| `Navya.bat` / `navya.sh` | The same menu on the laptop / on the Jetson: pre-flight, drive modes, viewers, calibration |
+| `preflight.py` | Checks packages, power (laptop battery or Jetson power mode), Arduino, radio, steering, batteries, camera calibration, LiDAR, SSD, object detection, network |
+| Dashboard (`--phone`) | Live camera, depth and LiDAR views and status in any browser on the same Wi-Fi (now the laptop's). Sliders tune speeds and distances during a run, and can save them to `config.py`. |
+| Trip recorder (`--record`) | Camera, depth and LiDAR videos plus a telemetry CSV, saved to the Jetson's SSD (or an SD card on the laptop). `trip_report.py` summarises a trip. |
+| Jetson setup | `jetson/setup_jetson.sh` (Python with GPU PyTorch, RealSense), `export_models.py` (TensorRT), `jetson/build_ch341.sh` (Arduino USB driver) |
+| Wiring document | `docs/Navya_wiring.pdf`, generated by `docs/wiring/make_wiring_pdf.py` |
 | Ask Navya | Ask a question about the camera picture from the phone. Uses free AI services (Gemini, with Groq as fallback). For display only: it never drives the car. |
 | Calibration | `calibrate_camera.py` measures the camera height and tilt from the floor. `steering_calibrate.py` teaches the Arduino full left, straight and full right. |
 | `test_logic.py` | 27 offline tests: obstacle maths on simulated depth images, speed planner, lane finder, steering, object rules, LiDAR packet decoding, battery guard, phone endpoints, AI fallback |
@@ -172,7 +194,8 @@ what it does.
 | Object detection (`--vision`) | yes | yes | **yes**: person seen at 5 m, rests 1.8–2.0 m away (2 Nov); "drive on after the person leaves" still to test on the ground |
 | Trip recorder | yes | yes | **yes (2 Nov)**; the numbers below come from its recordings |
 | Camera calibration | yes | yes | **yes**: camera and tape agree within 2 cm |
-| LiDAR (`--lidar`, radar view) | yes | yes | mounted and aligned (camera and LiDAR agree within 6 cm on a wall); in the full program it sometimes reports "lost", being investigated, so ground runs use the camera only for now |
+| LiDAR (`--lidar`, radar view) | yes | yes | mounted and aligned (camera and LiDAR agree within 6 cm on a wall). On the laptop the full program sometimes reported it "lost"; **on the Jetson: 0 times in 4.5 min (3 Nov)**. Not yet driven on the ground |
+| Jetson as onboard computer | yes | yes | **bench test on the car passed (3 Nov)**: all sensors, detection, recording, dashboard; driving waits for its power converter |
 | Steering firmware v2 + calibration | yes | firmware compiles | firmware v2 on the car; steering waiting for parts |
 | Lane following (`--steer`) | yes | yes | waiting for parts |
 | Battery monitor | yes | yes | waiting for 4 resistors |
@@ -200,19 +223,31 @@ what it does.
 | After a few hard stops the floor counted as an obstacle | The taped camera mount nodded forward 8° on braking | Camera mounted rigidly, then recalibrated |
 | The laptop went to sleep in the middle of testing | The hub's charging pass-through could not keep up; the battery reached 4% | Charge the laptop directly; the pre-flight check now fails below 20% battery |
 
+### Found and fixed moving to the Jetson (3 November)
+
+| Problem seen | Cause | Fix |
+|---|---|---|
+| The Arduino got no serial port on the Jetson | NVIDIA's JetPack kernel has no driver for the CH340 USB chip | Built the standard Linux `ch341` driver for this kernel and installed it (`jetson/build_ch341.sh`) |
+| With that driver, the link returned the same line over and over | Reading one byte at a time misbehaves with this driver | The link now reads everything that has arrived and splits lines itself: 0 damaged lines |
+| The programs took the LiDAR's port for the Arduino | With the Arduino invisible, the only USB-serial port left was the LiDAR's | The LiDAR's adapter type is never chosen as the Arduino |
+| The camera would not start | It was connected through a USB-C dock | Plain cable straight into a Jetson port: USB 3.2, calibration still matches |
+| GPU PyTorch did not work, and later broke again | The installed PyTorch was not NVIDIA's Jetson build; an automatic install pulled in an incompatible numpy | Navya has its own Python environment with NVIDIA's build and pinned versions; automatic installs are switched off |
+| The laptop could not reach the Jetson on college Wi-Fi | College Wi-Fi blocks device-to-device traffic | Both on a phone hotspot or the laptop's hotspot; the laptop finds the Jetson by itself |
+
 ## 9. Next steps
 
-1. Finish the person test on the ground: the car must drive on once the person steps aside.
-2. Find why the LiDAR sometimes reports "lost" in the full program (the program now
-   logs the details), then run with `--lidar` on the ground.
-3. Add the battery-monitor resistors (4 resistors on A4/A5). Today nothing warns
-   before the LiPos run low.
-4. Fit the steering parts (BTS7960, potentiometer, limit switches, fuses), calibrate,
+1. **Power the Jetson from the car:** LiPo → 5 A fuse → 12 V step-down (≥ 5 A) → Jetson
+   (planned wiring on page 4 of `docs/Navya_wiring.pdf`). Then the wheels-up test and the
+   first drive with the Jetson.
+2. Finish the person test on the ground: the car must drive on once the person steps aside.
+3. Run with `--lidar` on the ground (with the Jetson, where the LiDAR is stable).
+4. Add the battery-monitor resistors (4 resistors on A4/A5). Today nothing warns
+   before the LiPos run low. With the Jetson on a LiPo, this matters more.
+5. Fit the steering parts (BTS7960, potentiometer, limit switches, fuses), calibrate,
    and measure the real steering angle.
-5. First lane-following run in the corridor at creep speed, with `--record` on.
-6. Later: LiDAR mapping, wheel-speed feedback (needs an Arduino Mega), and moving
-   the software to an onboard computer.
+6. First lane-following run in the corridor at creep speed, with `--record` on.
+7. Later: LiDAR mapping and wheel-speed feedback (needs an Arduino Mega).
 
-**What we need:** the steering parts order (₹2,302), 4 resistors, corridor time for
-testing, and later an Arduino Mega (about ₹1,000–1,500) for wheel-speed sensors. A
-USB-C hub that really charges the laptop would also help.
+**What we need:** the 12 V step-down converter (ordered), the steering parts order
+(₹2,302), 4 resistors, corridor time for testing, and later an Arduino Mega (about
+₹1,000–1,500) for wheel-speed sensors.
