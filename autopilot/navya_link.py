@@ -9,7 +9,8 @@ from serial.tools import list_ports
 
 import config
 
-ARDUINO_VIDS = {0x2341, 0x2A03, 0x1A86, 0x0403, 0x10C4}  # Arduino, CH340, FTDI, CP210x
+# Arduino, CH340, FTDI. Not CP210x (0x10C4): that is the LiDAR's USB adapter on this car.
+ARDUINO_VIDS = {0x2341, 0x2A03, 0x1A86, 0x0403}
 
 
 @dataclass
@@ -35,14 +36,14 @@ class DriveStatus:
 
 
 def find_port() -> str:
-    ports = [p for p in list_ports.comports() if p.vid in ARDUINO_VIDS]
-    if len(ports) > 1:  # the LiDAR's USB adapter is a CP210x too; the Uno is not
-        ports = [p for p in ports if p.vid != 0x10C4 and p.device != config.LIDAR_PORT] or ports
+    ports = [p for p in list_ports.comports()
+             if p.vid in ARDUINO_VIDS and p.device != config.LIDAR_PORT]
     if len(ports) == 1:
         return ports[0].device
     listing = ", ".join(f"{p.device} ({p.description})" for p in list_ports.comports()) or "none"
+    hint = ("" if ports else " On a Jetson: is the CH340 driver installed (bash jetson/build_ch341.sh)?")
     raise RuntimeError(f"Could not pick the Arduino port automatically. Ports: {listing}. "
-                       "Pass --port COMx or set SERIAL_PORT in config.py.")
+                       "Pass --port (COM5 / /dev/ttyUSB0) or set SERIAL_PORT in config.py." + hint)
 
 
 class NavyaLink:

@@ -535,6 +535,13 @@ def test_arduino_port_ignores_lidar_adapter():
         navya_link.list_ports.comports = lambda: [P(device="COM7", vid=0x10C4, description="CP2102"),
                                                   P(device="COM6", vid=0x1A86, description="CH340")]
         assert navya_link.find_port() == "COM6"
+        # Only the LiDAR adapter there (Arduino driver missing): never pick it as the Arduino
+        navya_link.list_ports.comports = lambda: [P(device="/dev/ttyUSB0", vid=0x10C4, description="CP2102")]
+        try:
+            navya_link.find_port()
+            assert False, "picked the LiDAR adapter as the Arduino"
+        except RuntimeError:
+            pass
     finally:
         navya_link.list_ports.comports = real
 

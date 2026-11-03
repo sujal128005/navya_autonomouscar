@@ -69,7 +69,13 @@ def check_arduino():
 
     from navya_link import ARDUINO_VIDS, NavyaLink, find_port
     if not config.SERIAL_PORT and not any(p.vid in ARDUINO_VIDS for p in list_ports.comports()):
-        report(FAIL, "Arduino not connected", "plug in the Arduino's USB cable")
+        on_usb = any(Path(f).read_text().strip() == "1a86"
+                     for f in Path("/sys/bus/usb/devices").glob("*/idVendor")) if os.name != "nt" else False
+        if on_usb:
+            report(FAIL, "Arduino is on USB but has no serial port",
+                   "the CH340 driver is missing - run: bash jetson/build_ch341.sh")
+        else:
+            report(FAIL, "Arduino not connected", "plug in the Arduino's USB cable")
         return
     try:
         port = config.SERIAL_PORT or find_port()
