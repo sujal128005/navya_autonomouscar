@@ -29,6 +29,7 @@ import numpy as np
 import pyrealsense2 as rs
 
 import config
+from keyboard_input import has_screen, read_key
 from lane import LaneFinder, LaneView, WallLaneFinder
 from obstacle import CorridorDetector, Intrinsics
 from phone_stream import PhoneStream
@@ -272,6 +273,10 @@ def main():
     parser.add_argument("--phone", action="store_true", help="also serve the views and lane/obstacle status to a phone")
     parser.add_argument("--phone-port", type=int, default=8080)
     args = parser.parse_args()
+    window = has_screen()
+    if not window:
+        print("No screen here: showing on the dashboard instead (3D view buttons there). Q = quit.")
+        args.phone = True
 
     phone = None
     if args.phone:
@@ -282,8 +287,9 @@ def main():
     pipeline, align, intr, scale = start_camera()
     scene = Scene(intr, scale)
     view = OrbitView()
-    cv2.namedWindow("Navya 3D")
-    cv2.setMouseCallback("Navya 3D", view.on_mouse)
+    if window:
+        cv2.namedWindow("Navya 3D")
+        cv2.setMouseCallback("Navya 3D", view.on_mouse)
     CAPTURE_DIR.mkdir(exist_ok=True)
     print(__doc__)
 
@@ -312,10 +318,11 @@ def main():
 
             cam = np.hstack([draw_camera(color, lv, scene.lanes, text), draw_birdseye(lv, scene.lanes, obs_f, obs_l)])
             img3d = view.render(pts, colors, lv.lane, ["drag = rotate, wheel = zoom", "1 behind  2 top  3 side  R reset"])
-            cv2.imshow("Navya camera", cam)
-            cv2.imshow("Navya 3D", img3d)
+            if window:
+                cv2.imshow("Navya camera", cam)
+                cv2.imshow("Navya 3D", img3d)
 
-            key = chr(cv2.waitKey(1) & 0xFF).lower()
+            key = chr(cv2.waitKey(1) & 0xFF).lower() if window else (read_key() or "")
             if phone:
                 phone.publish("camera", cam)
                 phone.publish("map3d", img3d)
@@ -343,7 +350,8 @@ def main():
         pass
     finally:
         pipeline.stop()
-        cv2.destroyAllWindows()
+        if window:
+            cv2.destroyAllWindows()
         if phone:
             phone.close()
     return 0

@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 import config
+from keyboard_input import has_screen, read_key
 from lidar import LidarReader, Scan, corridor_distance, nearest_by_side
 
 
@@ -75,6 +76,10 @@ def main():
     parser.add_argument("--phone", action="store_true", help="also serve the radar to a phone")
     parser.add_argument("--phone-port", type=int, default=8080)
     args = parser.parse_args()
+    window = has_screen()
+    if not window:
+        print("No screen here: showing on the dashboard instead. Q = quit.")
+        args.phone = True
 
     try:
         lidar = LidarReader(args.port)
@@ -93,7 +98,7 @@ def main():
         phone = PhoneStream("Navya LiDAR", {"lidar": "LiDAR radar (up = forward)"}, port=args.phone_port)
         phone.print_addresses()
 
-    print("Running. Q in the window = quit.")
+    print("Running. Q = quit." if not window else "Running. Q in the window = quit.")
     last_t, last_print = 0.0, 0.0
     try:
         while True:
@@ -101,7 +106,8 @@ def main():
             if scan.t != last_t:
                 last_t = scan.t
                 img = render_radar(scan, 640, args.range)
-                cv2.imshow("Navya LiDAR", img)
+                if window:
+                    cv2.imshow("Navya LiDAR", img)
                 path, sides = corridor_distance(scan), nearest_by_side(scan)
                 if phone:
                     phone.publish("lidar", img)
@@ -115,15 +121,21 @@ def main():
             if time.monotonic() - scan.t > 1:
                 print("LiDAR stopped sending" + (f": {lidar.error}" if lidar.error else ""))
                 break
-            if cv2.waitKey(20) & 0xFF in (ord("q"), ord("Q")):
-                break
+            if window:
+                if cv2.waitKey(20) & 0xFF in (ord("q"), ord("Q")):
+                    break
+            else:
+                time.sleep(0.02)
+                if read_key() == "q":
+                    break
     except KeyboardInterrupt:
         pass
     finally:
         lidar.close()
         if phone:
             phone.close()
-        cv2.destroyAllWindows()
+        if window:
+            cv2.destroyAllWindows()
     return 0
 
 

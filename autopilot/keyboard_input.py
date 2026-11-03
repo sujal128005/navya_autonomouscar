@@ -10,6 +10,13 @@ import atexit
 import os
 import sys
 
+
+def has_screen() -> bool:
+    """Can this program open windows? Not on the Jetson when run over SSH from the laptop;
+    the viewers then show on the dashboard instead, and Q in the terminal quits."""
+    return os.name == "nt" or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 if os.name == "nt":
     import msvcrt
 

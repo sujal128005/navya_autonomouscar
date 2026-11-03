@@ -28,7 +28,7 @@ from phone_stream import PhoneStream
 import live_settings
 from ask_navya import AskNavya
 from battery import BatteryGuard, describe
-from keyboard_input import read_key
+from keyboard_input import has_screen, read_key
 from lane import WallLaneFinder
 from lane_follow import LaneFollower
 from speed_planner import SpeedPlanner, apply_trim
@@ -134,6 +134,9 @@ def main():
     args = parser.parse_args()
     if args.replay:
         args.dry_run = True
+    if args.show and not has_screen():
+        print("No screen here: --show goes to the dashboard instead.")
+        args.show, args.phone = False, True
 
     link = None
     if not args.dry_run:

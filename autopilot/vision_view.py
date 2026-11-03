@@ -16,6 +16,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from keyboard_input import has_screen, read_key
 from phone_stream import PhoneStream
 from vision import ObjectDetector, describe, draw
 
@@ -64,6 +65,10 @@ def main():
     parser.add_argument("--phone", action="store_true", help="also serve the view and object list to a phone")
     parser.add_argument("--phone-port", type=int, default=8080)
     args = parser.parse_args()
+    window = has_screen()
+    if not window:
+        print("No screen here: showing on the dashboard instead. Q = quit.")
+        args.phone = True
 
     print("Loading the YOLO model...")
     detector = ObjectDetector()
@@ -91,7 +96,8 @@ def main():
             header = f"{len(detections)} objects   {fps:.0f} fps"
             cv2.putText(vis, header, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA)
             cv2.putText(vis, header, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.imshow("Navya vision", vis)
+            if window:
+                cv2.imshow("Navya vision", vis)
 
             if phone:
                 phone.publish("vision", vis)
@@ -100,7 +106,7 @@ def main():
                                  objects=", ".join(describe(d) for d in detections[:6]) or "-",
                                  fps=f"{fps:.0f}")
 
-            key = chr(cv2.waitKey(1) & 0xFF).lower()
+            key = chr(cv2.waitKey(1) & 0xFF).lower() if window else (read_key() or "")
             if key == "q":
                 break
             if key == "s":
@@ -111,7 +117,8 @@ def main():
         pass
     finally:
         source.close()
-        cv2.destroyAllWindows()
+        if window:
+            cv2.destroyAllWindows()
         if phone:
             phone.close()
     return 0
