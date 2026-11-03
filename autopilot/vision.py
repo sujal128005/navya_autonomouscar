@@ -3,6 +3,7 @@
 import os
 
 os.environ.setdefault("YOLO_OFFLINE", "1")  # no update checks or usage reporting from Ultralytics
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")  # never pip-install at run time (it broke numpy on the Jetson)
 
 from dataclasses import dataclass
 from pathlib import Path
