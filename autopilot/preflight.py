@@ -259,16 +259,22 @@ def local_addresses() -> list[str]:
 
 
 def check_phone():
-    # The address this computer gets when it runs the hotspot itself:
-    # Windows Mobile hotspot 192.168.137.1, Linux NetworkManager hotspot 10.42.0.1.
-    hotspot = "192.168.137.1" if os.name == "nt" else "10.42.0.1"
-    if hotspot in local_addresses():
-        report(OK, "Hotspot on", f"phone: join it, open http://{hotspot}:8080")
-    elif os.name == "nt":
-        report(WARN, "Mobile hotspot looks off", "Windows Settings > Network > Mobile hotspot (for --phone)")
+    addrs = local_addresses()
+    if os.name == "nt":
+        # Laptop drives the car: its Mobile hotspot serves the dashboard to a phone.
+        if "192.168.137.1" in addrs:
+            report(OK, "Hotspot on", "phone: join it, open http://192.168.137.1:8080")
+        else:
+            report(WARN, "Mobile hotspot looks off", "Windows Settings > Network > Mobile hotspot (for --phone)")
     else:
-        report(INFO, "No hotspot on this computer", "only for the phone page: nmcli device wifi hotspot "
-                     "ssid Navya password <8+ characters>, or join the phone and this computer to one network")
+        # Jetson drives the car: it joins the laptop's Mobile hotspot, and the laptop's
+        # browser shows the dashboard (and the laptop reaches the Jetson by SSH).
+        on_laptop = [a for a in addrs if a.startswith("192.168.137.")]
+        if on_laptop:
+            report(OK, "On the laptop's hotspot", f"dashboard: open http://{on_laptop[0]}:8080 on the laptop")
+        else:
+            report(WARN, "Not on the laptop's hotspot", "turn on the laptop's Mobile hotspot and join it "
+                         "(needed for the dashboard and SSH from the laptop)")
     probe = socket.socket()
     try:
         probe.bind(("0.0.0.0", 8080))
