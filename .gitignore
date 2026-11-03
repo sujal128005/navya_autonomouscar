@@ -5,6 +5,7 @@ autopilot/captures/
 autopilot/models/*.pt
 autopilot/models/*.onnx
 autopilot/models/*_openvino_model/
+autopilot/models/*.engine
 kernel.errors.txt
 autopilot/recordings/
 autopilot/keys.env
