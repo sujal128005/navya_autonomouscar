@@ -236,6 +236,11 @@ def check_storage():
         free = shutil.disk_usage(ssd.parent).free / 1e9
         report(OK if free > 20 else WARN, f"Recordings go to the SSD {ssd} - {free:.0f} GB free")
         return
+    if os.name != "nt" and any(Path(f).read_text().strip() == "04e8"
+                               for f in Path("/sys/bus/usb/devices").glob("*/idVendor")):
+        # The Jetson mounts it at start-up only; plugged in later, it needs mounting by hand.
+        report(WARN, "Samsung SSD plugged in but not mounted", f"sudo mount {ssd.parent}")
+        return
     drives = removable_drives()
     if drives:
         best = max(drives, key=lambda d: shutil.disk_usage(d).free)
