@@ -9,3 +9,6 @@ autopilot/models/*.engine
 kernel.errors.txt
 autopilot/recordings/
 autopilot/keys.env
+
+# PDF build scratch (docs/report/make_full_record.py)
+docs/report/build/
